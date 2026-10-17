@@ -1,4 +1,4 @@
-/**
+﻿/**
  * My Confession 后端 —— 零依赖单文件：node server.js
  * 存储：SQLite（Node 24 内置 node:sqlite，不需要 npm install）
  *
@@ -28,13 +28,33 @@ const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '0.0.0.0';
 const CATEGORIES = ['正常人', '神人', '全唐', '半唐', '**'];
 
-/** 允许在线编辑正文的页面（people-* 是动态页，排除；admin 页也排除）。 */
-const CONTENT_PAGES = [
-  'index.html', 'about.html', 'contact.html', 'help.html', 'copyright.html', 'suishu.html', 'x-tutu.html',
-  'rules-daily.html', 'rules-face.html', 'rules-study.html', 'rules-punish.html', 'rules-misc.html',
-  'youth-fun.html', 'youth-combo.html', 'youth-end.html', 'youth-epilogue.html', 'youth-credits.html',
-  'anec-legend.html', 'anec-clumsy.html', 'anec-wisdom.html', 'anec-custom.html', 'anec-lucky.html',
-];
+/**
+ * 允许在线编辑正文的页面：启动时扫盘自动发现（不写死路径，页面怎么挪都不会漏）。
+ * 判据 = 文件里含 `content-left`，且不是后台页 / 备份 / 老版单页。
+ */
+const SKIP_DIRS = new Set(['data', 'node_modules', 'docs', 'deploy', '.git', 'js', 'css', '历史记录', '剩余文本', '人物册', '班规']);
+function scanContentPages() {
+  const out = [];
+  (function walk(dir, rel) {
+    let ents;
+    try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      if (e.name.startsWith('.')) continue;
+      const full = path.join(dir, e.name);
+      const relPath = rel ? rel + '/' + e.name : e.name;
+      if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name)) walk(full, relPath); continue; }
+      if (!e.name.endsWith('.html')) continue;
+      if (/^admin/i.test(e.name) || /^people-/i.test(e.name) || /bak/i.test(e.name) || /^1\.5/.test(e.name)) continue;
+      let txt;
+      try { txt = fs.readFileSync(full, 'utf8'); } catch { continue; }
+      if (txt.indexOf('content-left') < 0) continue;
+      out.push({ page: e.name, path: relPath });
+    }
+  })(ROOT, '');
+  return out;
+}
+const PAGES = scanContentPages();
+const PAGE_MAP = new Map(PAGES.map((p) => [p.page, p.path]));
 
 // ---------------------------------------------------------------- 配置
 function loadConfig() {
@@ -296,7 +316,7 @@ async function api(req, res, pathname) {
   let cm = pathname.match(/^\/api\/content\/([\w.-]+)$/);
   if (cm && m === 'GET') {
     const page = cm[1];
-    if (!CONTENT_PAGES.includes(page)) return send(res, 404, { ok: false, error: '不是可编辑页面' });
+    if (!PAGE_MAP.has(page)) return send(res, 404, { ok: false, error: '不是可编辑页面' });
     const row = q.getContent.get(page);
     return send(res, 200, { ok: true, page, html: row ? row.html : '', updatedAt: row ? row.updated_at : 0 });
   }
@@ -547,14 +567,14 @@ async function api(req, res, pathname) {
       const saved = new Map(q.allContent.all().map((r) => [r.page, r.updated_at]));
       return send(res, 200, {
         ok: true,
-        pages: CONTENT_PAGES.map((p) => ({ page: p, edited: saved.has(p), updatedAt: saved.get(p) || 0 })),
+        pages: PAGES.map((p) => ({ page: p.page, path: p.path, edited: saved.has(p.page), updatedAt: saved.get(p.page) || 0 })),
       });
     }
 
     let cp = pathname.match(/^\/api\/admin\/content\/([\w.-]+)$/);
     if (cp) {
       const page = cp[1];
-      if (!CONTENT_PAGES.includes(page)) return send(res, 404, { ok: false, error: '不是可编辑页面' });
+      if (!PAGE_MAP.has(page)) return send(res, 404, { ok: false, error: '不是可编辑页面' });
       if (m === 'GET') {
         const row = q.getContent.get(page);
         return send(res, 200, {
@@ -579,7 +599,7 @@ async function api(req, res, pathname) {
     if (pathname === '/api/admin/content-reset' && m === 'POST') {
       const b = await readBody(req);
       const page = clip(b.page, 60);
-      if (!CONTENT_PAGES.includes(page)) return send(res, 404, { ok: false, error: '不是可编辑页面' });
+      if (!PAGE_MAP.has(page)) return send(res, 404, { ok: false, error: '不是可编辑页面' });
       const prev = q.getContent.get(page);
       if (prev) q.pushHistory.run(page, prev.html, Date.now());
       q.delContent.run(page);

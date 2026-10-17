@@ -1026,128 +1026,6 @@ a.image-showcase:hover .img-hint {
     resize: vertical;
 }
 
-/* ---------------- 词条留言 ---------------- */
-.cmt-bar {
-    margin-top: 10px;
-    border-top: 1px dashed #e6ebf0;
-    padding-top: 8px;
-}
-
-.cmt-toggle {
-    border: none;
-    background: none;
-    color: #3498db;
-    font-size: 13px;
-    cursor: pointer;
-    padding: 2px 0;
-    font-family: inherit;
-}
-
-.cmt-toggle:hover {
-    text-decoration: underline;
-}
-
-.cmt-box {
-    margin-top: 6px;
-}
-
-.cmt-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-bottom: 10px;
-}
-
-.cmt-item {
-    background: #f8f9fa;
-    border-left: 3px solid #dfe4ea;
-    border-radius: 4px;
-    padding: 8px 12px;
-}
-
-.cmt-head {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    margin-bottom: 3px;
-}
-
-.cmt-head strong {
-    color: #2c3e50;
-    font-size: 13px;
-}
-
-.cmt-time {
-    color: #9aa5b1;
-    font-size: 12px;
-}
-
-.cmt-text {
-    color: #555;
-    font-size: 14px;
-    line-height: 1.6;
-    margin: 0;
-    white-space: pre-wrap;
-    word-break: break-word;
-}
-
-.cmt-empty {
-    color: #9aa5b1;
-    font-size: 13px;
-    margin: 4px 0 8px;
-}
-
-.cmt-form-row {
-    display: flex;
-    gap: 8px;
-    align-items: flex-start;
-    flex-wrap: wrap;
-}
-
-.cmt-form-row input {
-    flex: 0 0 130px;
-    padding: 7px 10px;
-    border: 1px solid #dfe4ea;
-    border-radius: 5px;
-    font-size: 13px;
-    font-family: inherit;
-}
-
-.cmt-form-row textarea {
-    flex: 1 1 220px;
-    min-height: 40px;
-    padding: 7px 10px;
-    border: 1px solid #dfe4ea;
-    border-radius: 5px;
-    font-size: 13px;
-    font-family: inherit;
-    resize: vertical;
-}
-
-.cmt-form-row button {
-    padding: 7px 14px;
-    border: none;
-    border-radius: 5px;
-    background: #3498db;
-    color: #fff;
-    font-size: 13px;
-    cursor: pointer;
-    font-family: inherit;
-}
-
-.cmt-form-row button:hover {
-    background: #2980b9;
-}
-
-.cmt-tip {
-    display: block;
-    font-size: 12px;
-    margin-top: 5px;
-}
-
-.cmt-tip.ok { color: #27ae60; }
-.cmt-tip.err { color: #c0392b; }
-
 /* ================= 手机端优化（<=640px） ================= */
 @media (max-width: 640px) {
     .container {
@@ -1214,18 +1092,6 @@ a.image-showcase:hover .img-hint {
         min-height: 88px;
     }
 
-    /* 词条留言：防 iOS 聚焦放大，按钮别太窄 */
-    .cmt-form-row input,
-    .cmt-form-row textarea {
-        font-size: 16px;
-        flex: 1 1 100%;
-    }
-
-    .cmt-form-row button {
-        width: 100%;
-        min-height: 44px;
-    }
-
     /* 首页右侧图别占太高 */
     .image-showcase {
         height: 220px;
@@ -1270,3 +1136,25 @@ a.image-showcase:hover .img-hint {
         padding: 10px 14px;
     }
 }
+
+
+/* ---------------- 词条留言 ---------------- */
+.cmt-bar { margin-top: 10px; border-top: 1px dashed #e6ebf0; padding-top: 8px; }
+.cmt-toggle { border: none; background: none; color: #3498db; font-size: 13px; cursor: pointer; padding: 2px 0; font-family: inherit; }
+.cmt-toggle:hover { text-decoration: underline; }
+.cmt-box { margin-top: 6px; }
+.cmt-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.cmt-item { background: #f8f9fa; border-left: 3px solid #dfe4ea; border-radius: 4px; padding: 8px 12px; }
+.cmt-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px; }
+.cmt-head strong { color: #2c3e50; font-size: 13px; }
+.cmt-time { color: #9aa5b1; font-size: 12px; }
+.cmt-text { color: #555; font-size: 14px; line-height: 1.6; margin: 0; white-space: pre-wrap; word-break: break-word; }
+.cmt-empty { color: #9aa5b1; font-size: 13px; margin: 4px 0 8px; }
+.cmt-form-row { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+.cmt-form-row input { flex: 0 0 130px; padding: 7px 10px; border: 1px solid #dfe4ea; border-radius: 5px; font-size: 13px; font-family: inherit; }
+.cmt-form-row textarea { flex: 1 1 220px; min-height: 40px; padding: 7px 10px; border: 1px solid #dfe4ea; border-radius: 5px; font-size: 13px; font-family: inherit; resize: vertical; }
+.cmt-form-row button { padding: 7px 14px; border: none; border-radius: 5px; background: #3498db; color: #fff; font-size: 13px; cursor: pointer; font-family: inherit; }
+.cmt-form-row button:hover { background: #2980b9; }
+.cmt-tip { display: block; font-size: 12px; margin-top: 5px; }
+.cmt-tip.ok { color: #27ae60; }
+.cmt-tip.err { color: #c0392b; }

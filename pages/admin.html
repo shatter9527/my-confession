@@ -7,9 +7,11 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%23207cca'/%3E%3Ctext x='50' y='70' font-size='56' text-anchor='middle' fill='%23ffffff' font-family='Georgia,serif'%3EA%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="../css/style.css">
     <style>
-        .admin-wrap { max-width: 900px; margin: 0 auto; padding: 30px 20px 60px; }
-        .admin-head { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+        .admin-wrap { max-width: 980px; margin: 0 auto; padding: 30px 20px 60px; }
+        .admin-head { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; flex-wrap: wrap; }
         .admin-head h1 { font-size: 24px; color: #2c3e50; }
+        .admin-head nav { margin-left: auto; display: flex; gap: 14px; font-size: 14px; }
+        .admin-head nav a { color: #3498db; text-decoration: none; }
         .admin-note { color: #7f8c8d; font-size: 14px; margin-bottom: 22px; }
         .admin-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
         .admin-bar input { flex: 1 1 320px; padding: 10px 12px; border: 1px solid #dfe4ea; border-radius: 6px; font-size: 14px; font-family: inherit; }
@@ -25,7 +27,7 @@
         .tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
         .tbl th, .tbl td { text-align: left; padding: 9px 10px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
         .tbl th { color: #7f8c8d; font-weight: normal; font-size: 13px; }
-        .tbl td.note { color: #555; max-width: 340px; }
+        .tbl td.note { color: #555; max-width: 320px; }
         .tbl tr.dim td { opacity: .55; }
         .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; white-space: nowrap; }
         .tag.on { background: #e8f6ee; color: #27ae60; }
@@ -55,6 +57,13 @@
         .form-row input { flex: 1 1 160px; }
         .form-row select { flex: 0 0 120px; }
         .form-row textarea { flex: 1 1 100%; min-height: 64px; resize: vertical; }
+
+        .edit-row td { background: #f4f8fd; }
+        .edit-row input, .edit-row select, .edit-row textarea {
+            width: 100%; padding: 6px 8px; border: 1px solid #dfe4ea; border-radius: 4px;
+            font-size: 13px; font-family: inherit; box-sizing: border-box;
+        }
+        .edit-row textarea { min-height: 56px; resize: vertical; }
     </style>
 </head>
 <body>
@@ -62,11 +71,14 @@
 <div class="admin-wrap">
     <div class="admin-head">
         <h1><i class="fas fa-shield-halved" style="color:#3498db"></i> 审核台</h1>
-        <a href="../index.html" style="margin-left:auto;color:#3498db;text-decoration:none;font-size:14px">← 回到站点</a>
+        <nav>
+            <a href="admin-content.html">✎ 正文编辑</a>
+            <a href="../index.html">← 回到站点</a>
+        </nav>
     </div>
     <p class="admin-note">
-        开「词条审核」后，访客的新增和删除都变成<strong>待审批的请求</strong>，你看过才生效。
-        关掉就是原来的自由编辑。口令存在 <code>config.json</code> 的 <code>adminToken</code>。
+        三个开关分别管「词条」「留言板」「词条下的评论」。开审核后访客的提交变成待审批请求，你点头才生效。
+        口令存在 <code>config.json</code> 的 <code>adminToken</code>。
     </p>
 
     <div class="admin-bar">
@@ -78,16 +90,19 @@
     <div class="msg-line" id="status"></div>
 
     <div id="panel" class="hide">
-        <!-- 开关 -->
         <h2 class="sec">审核开关</h2>
         <div class="card">
             <div class="sw">
                 <label><input type="checkbox" id="sw-people"> 词条需要审核</label>
-                <span class="hint">开：访客的新增/删除都进待审核队列；关：访客自由增删</span>
+                <span class="hint">开：访客的新增/删除都进待审核队列；关：自由增删</span>
             </div>
             <div class="sw">
-                <label><input type="checkbox" id="sw-msg"> 留言需要审核</label>
-                <span class="hint">开：留言只有你能放出来；关：发完立刻显示</span>
+                <label><input type="checkbox" id="sw-cmt"> 词条评论需要审核</label>
+                <span class="hint">开：词条下的留言要你放过才显示</span>
+            </div>
+            <div class="sw">
+                <label><input type="checkbox" id="sw-msg"> 留言板需要审核</label>
+                <span class="hint">开：留言板的新留言要你放过才显示</span>
             </div>
             <div class="sw">
                 <button id="btn-save-sw">保存开关</button>
@@ -97,12 +112,12 @@
 
         <div class="stat">
             <div><b id="s-people">0</b>人物（在线）</div>
-            <div id="d-pending-people"><b id="s-pending-people">0</b>待审核新增</div>
-            <div id="d-pending-req"><b id="s-pending-req">0</b>待审核删除</div>
+            <div id="d-pending-people"><b id="s-pending-people">0</b>待审新增</div>
+            <div id="d-pending-req"><b id="s-pending-req">0</b>待审删除</div>
+            <div id="d-pending-cmt"><b id="s-pending-cmt">0</b>待审评论</div>
             <div><b id="s-msg">0</b>留言（在线）</div>
         </div>
 
-        <!-- 待审核：新增 -->
         <div id="block-pending-people" class="hide">
             <h2 class="sec">待审核 · 访客新增的词条</h2>
             <table class="tbl">
@@ -111,7 +126,6 @@
             </table>
         </div>
 
-        <!-- 待审核：删除 -->
         <div id="block-pending-req" class="hide">
             <h2 class="sec">待审核 · 访客申请的删除</h2>
             <table class="tbl">
@@ -120,7 +134,14 @@
             </table>
         </div>
 
-        <!-- 管理员直接新增 -->
+        <div id="block-pending-cmt" class="hide">
+            <h2 class="sec">待审核 · 词条评论</h2>
+            <table class="tbl">
+                <thead><tr><th>ID</th><th>词条</th><th>署名</th><th>内容</th><th>操作</th></tr></thead>
+                <tbody id="tb-pending-cmt"></tbody>
+            </table>
+        </div>
+
         <h2 class="sec">新增词条（管理员，直接上架）</h2>
         <div class="card">
             <div class="form-row">
@@ -149,6 +170,14 @@
             </table>
         </div>
 
+        <h2 class="sec">全部评论</h2>
+        <div class="tbl-wrap">
+            <table class="tbl">
+                <thead><tr><th>ID</th><th>词条</th><th>署名</th><th>内容</th><th>状态</th><th>操作</th></tr></thead>
+                <tbody id="tb-cmt"></tbody>
+            </table>
+        </div>
+
         <h2 class="sec">留言板</h2>
         <div class="tbl-wrap">
             <table class="tbl">
@@ -165,8 +194,6 @@
     var $ = function (id) { return document.getElementById(id); };
     var token = localStorage.getItem('mf_admin_token') || '';
     $('token').value = token;
-
-    function esc(t) { return String(t == null ? '' : t); }
 
     function setStatus(txt, cls) {
         $('status').textContent = txt || '';
@@ -192,7 +219,7 @@
     function cell(tr, text, cls) {
         var td = document.createElement('td');
         if (cls) td.className = cls;
-        td.textContent = esc(text);
+        td.textContent = text == null ? '' : String(text);
         tr.appendChild(td);
         return td;
     }
@@ -221,22 +248,13 @@
         return b;
     }
 
-    function d2(n) {
-        var d = new Date(Number(n));
-        var p = function (x) { return String(x).padStart(2, '0'); };
-        return (d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
-    }
-
-    // ---- 待审核：新增
+    // ---------- 待审核：新增词条
     function renderPendingPeople(list) {
         var tb = $('tb-pending-people');
         tb.textContent = '';
         list.forEach(function (p) {
             var tr = document.createElement('tr');
-            cell(tr, p.id);
-            cell(tr, p.category);
-            cell(tr, p.name);
-            cell(tr, p.note, 'note');
+            cell(tr, p.id); cell(tr, p.category); cell(tr, p.name); cell(tr, p.note, 'note');
             var ops = document.createElement('td');
             ops.appendChild(btn('通过', 'ok', function () {
                 post('/api/admin/people-review', { id: p.id, action: 'approve' }).then(load);
@@ -249,7 +267,7 @@
         });
     }
 
-    // ---- 待审核：删除申请
+    // ---------- 待审核：删除申请
     function renderPendingReq(list) {
         var tb = $('tb-pending-req');
         tb.textContent = '';
@@ -272,10 +290,119 @@
         });
     }
 
+    // ---------- 评论行（待审核 / 全部共用）
+    function commentRow(c, actions) {
+        var tr = document.createElement('tr');
+        if (c.status !== 'published') tr.className = 'dim';
+        cell(tr, c.id);
+        cell(tr, c.person_name || ('#' + c.person_id));
+        cell(tr, c.name);
+        cell(tr, c.text, 'note');
+        if (showStatus) { var td = document.createElement('td'); td.appendChild(tag(c.status)); tr.appendChild(td); }
+        var ops = document.createElement('td');
+        actions(ops, c);
+        tr.appendChild(ops);
+        return tr;
+    }
+    var showStatus = false;
+
+    function renderPendingComments(list) {
+        var tb = $('tb-pending-cmt');
+        tb.textContent = '';
+        showStatus = false;
+        list.forEach(function (c) {
+            tb.appendChild(commentRow(c, function (ops) {
+                ops.appendChild(btn('通过', 'ok', function () {
+                    post('/api/admin/comment', { id: c.id, action: 'approve' }).then(load);
+                }));
+                ops.appendChild(btn('驳回', 'warn', function () {
+                    post('/api/admin/comment', { id: c.id, action: 'reject' }).then(load);
+                }));
+            }));
+        });
+    }
+
+    function renderAllComments(list) {
+        var tb = $('tb-cmt');
+        tb.textContent = '';
+        showStatus = true;
+        list.forEach(function (c) {
+            tb.appendChild(commentRow(c, function (ops) {
+                if (c.status !== 'published') {
+                    ops.appendChild(btn('恢复', 'ok', function () {
+                        post('/api/admin/comment', { id: c.id, action: 'approve' }).then(load);
+                    }));
+                } else {
+                    ops.appendChild(btn('隐藏', 'gray', function () {
+                        post('/api/admin/comment', { id: c.id, action: 'hide' }).then(load);
+                    }));
+                }
+                ops.appendChild(btn('彻底删除', 'warn', function () {
+                    if (!confirm('彻底删除这条评论？')) return;
+                    post('/api/admin/purge', { id: c.id, type: 'comment' }).then(load);
+                }));
+            }));
+        });
+    }
+
+    // ---------- 人物册（含在线编辑）
+    var editingId = 0;
+
+    function editRowFor(p) {
+        var tr = document.createElement('tr');
+        tr.className = 'edit-row';
+        var td = document.createElement('td');
+        td.colSpan = 6;
+
+        var nameIn = document.createElement('input');
+        nameIn.value = p.name;
+        nameIn.maxLength = 40;
+
+        var catSel = document.createElement('select');
+        ['正常人', '神人', '全唐', '半唐', '**'].forEach(function (c) {
+            var o = document.createElement('option');
+            o.value = c; o.textContent = c;
+            if (c === p.category) o.selected = true;
+            catSel.appendChild(o);
+        });
+
+        var noteIn = document.createElement('textarea');
+        noteIn.value = p.note;
+        noteIn.maxLength = 1200;
+
+        var row1 = document.createElement('div');
+        row1.className = 'form-row';
+        row1.appendChild(nameIn);
+        row1.appendChild(catSel);
+
+        var row2 = document.createElement('div');
+        row2.className = 'form-row';
+        row2.appendChild(noteIn);
+
+        var row3 = document.createElement('div');
+        row3.className = 'form-row';
+        row3.appendChild(btn('保存', 'ok', function () {
+            post('/api/admin/people/' + p.id, {
+                name: nameIn.value.trim(),
+                category: catSel.value,
+                note: noteIn.value.trim()
+            }).then(function (r) {
+                if (r.body && r.body.ok) { editingId = 0; setStatus('已保存', 'ok'); load(); }
+                else setStatus((r.body && r.body.error) || '保存失败', 'err');
+            });
+        }));
+        row3.appendChild(btn('取消', 'gray', function () { editingId = 0; load(); }));
+
+        td.appendChild(row1); td.appendChild(row2); td.appendChild(row3);
+        tr.appendChild(td);
+        return tr;
+    }
+
     function renderPeople(list) {
         var tb = $('tb-people');
         tb.textContent = '';
         list.forEach(function (p) {
+            if (p.id === editingId) { tb.appendChild(editRowFor(p)); return; }
             var tr = document.createElement('tr');
             if (p.status !== 'published') tr.className = 'dim';
             cell(tr, p.id);
@@ -287,6 +414,7 @@
             tr.appendChild(td);
 
             var ops = document.createElement('td');
+            ops.appendChild(btn('编辑', '', function () { editingId = p.id; load(); }));
             if (p.status === 'published') {
                 ops.appendChild(btn('下架', 'gray', function () {
                     post('/api/admin/people-hide', { id: p.id }).then(load);
@@ -339,9 +467,11 @@
 
     function applySettings(s) {
         $('sw-people').checked = !!s.peopleModerated;
+        $('sw-cmt').checked = !!s.commentsModerated;
         $('sw-msg').checked = !!s.messagesModerated;
-        $('sw-state').textContent = '当前：词条审核' + (s.peopleModerated ? '开' : '关') +
-            ' · 留言审核' + (s.messagesModerated ? '开' : '关');
+        $('sw-state').textContent = '当前：词条' + (s.peopleModerated ? '开' : '关') +
+            ' · 评论' + (s.commentsModerated ? '开' : '关') +
+            ' · 留言' + (s.messagesModerated ? '开' : '关');
     }
 
     function load() {
@@ -354,21 +484,27 @@
 
             var pendingPeople = (r.body.people || []).filter(function (p) { return p.status === 'pending'; });
             var pendingReq = (r.body.requests || []).filter(function (x) { return x.status === 'pending'; });
+            var pendingCmt = (r.body.comments || []).filter(function (c) { return c.status === 'pending'; });
 
             $('s-people').textContent = r.body.stats.people;
             $('s-msg').textContent = r.body.stats.messages;
             $('s-pending-people').textContent = pendingPeople.length;
             $('s-pending-req').textContent = pendingReq.length;
+            $('s-pending-cmt').textContent = pendingCmt.length;
             $('d-pending-people').className = pendingPeople.length ? 'alert' : '';
             $('d-pending-req').className = pendingReq.length ? 'alert' : '';
+            $('d-pending-cmt').className = pendingCmt.length ? 'alert' : '';
 
             $('block-pending-people').classList.toggle('hide', pendingPeople.length === 0);
             $('block-pending-req').classList.toggle('hide', pendingReq.length === 0);
+            $('block-pending-cmt').classList.toggle('hide', pendingCmt.length === 0);
 
             applySettings(r.body.settings || {});
             renderPendingPeople(pendingPeople);
             renderPendingReq(pendingReq);
+            renderPendingComments(pendingCmt);
             renderPeople(r.body.people || []);
+            renderAllComments(r.body.comments || []);
             renderMsgs(r.body.messages || []);
             setStatus('已载入', 'ok');
         }).catch(function () {
@@ -401,14 +537,11 @@
         if (!token) { setStatus('先载入口令', 'err'); return; }
         post('/api/admin/settings', {
             peopleModerated: $('sw-people').checked,
+            commentsModerated: $('sw-cmt').checked,
             messagesModerated: $('sw-msg').checked
         }).then(function (r) {
-            if (r.body && r.body.ok) {
-                applySettings(r.body.settings);
-                setStatus('开关已保存', 'ok');
-            } else {
-                setStatus('保存失败', 'err');
-            }
+            if (r.body && r.body.ok) { applySettings(r.body.settings); setStatus('开关已保存', 'ok'); }
+            else setStatus('保存失败', 'err');
         });
     });
 

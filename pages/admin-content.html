@@ -63,6 +63,7 @@
     var token = localStorage.getItem('mf_admin_token') || '';
     $('token').value = token;
     var current = '';
+    var pagePath = {};
 
     function setMsg(t, cls) {
         $('msg').textContent = t || '';
@@ -98,6 +99,7 @@
             r.body.pages.forEach(function (p) {
                 var o = document.createElement('option');
                 o.value = p.page;
+                pagePath[p.page] = p.path || p.page;
                 o.textContent = p.page + (p.edited ? '（已改过）' : '');
                 sel.appendChild(o);
             });
@@ -132,7 +134,7 @@
         if (!page) { $('frame').src = 'about:blank'; return; }
         current = page;
         $('history').classList.add('hidden');
-        $('frame').src = page + '?edit=' + Date.now();
+        $('frame').src = '/' + (pagePath[page] || page) + '?edit=' + Date.now();
     }
 
     $('frame').addEventListener('load', function () {
