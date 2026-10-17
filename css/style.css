@@ -1158,3 +1158,27 @@ a.image-showcase:hover .img-hint {
 .cmt-tip { display: block; font-size: 12px; margin-top: 5px; }
 .cmt-tip.ok { color: #27ae60; }
 .cmt-tip.err { color: #c0392b; }
+
+/* 正文条目下的留言条（条目是 <p>，留言条跟在里面，控制在窄容器里不换行） */
+p.entry .cmt-bar,
+p.quote .cmt-bar {
+    margin-top: 6px;
+    padding-top: 4px;
+}
+
+p.entry .cmt-toggle,
+p.quote .cmt-toggle {
+    font-size: 12px;
+    white-space: nowrap;
+    display: inline-block;
+}
+
+p.entry .cmt-box,
+p.quote .cmt-box {
+    margin-top: 4px;
+}
+
+.quote-grid .cmt-form-row input,
+.quote-grid .cmt-form-row textarea {
+    flex: 1 1 100%;
+}
