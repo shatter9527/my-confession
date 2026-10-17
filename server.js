@@ -4,19 +4,13 @@
  *
  * 权限模型
  *   · 静态文件（正文 / 岁月史书 / 鸣谢栏 …）永远只读，任何人都改不到
- *   · 访客可写：人物册、留言板
- *   · 两个独立的审核开关（config.json）：
- *       peopleModerated  → 人物册的任何操作（新增 / 删除）都变成「请求」，进后台等你审批
- *       messagesModerated → 留言需审核后才上架
+ *   · 访客可写：人物册、留言板、词条留言
+ *   · 三个独立审核开关（config.json）：peopleModerated / messagesModerated / commentsModerated
+ *   · 管理员可在后台直接编辑各页正文（存覆盖层，随时可恢复默认）
  *   · 删除一律软删除（status 变化），数据不会真没，管理口令可恢复
- *   · 管理口令：config.json 的 adminToken
  *
  * 人物状态机
- *   published  在线
- *   pending    访客新增，待审批
- *   hidden     管理员下架（可恢复）
- *   rejected   审批驳回
- *   deleted    已删除（可恢复）
+ *   published 在线 / pending 待审批 / hidden 已下架 / rejected 已驳回 / deleted 已删除
  */
 'use strict';
 
@@ -34,6 +28,14 @@ const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '0.0.0.0';
 const CATEGORIES = ['正常人', '神人', '全唐', '半唐', '**'];
 
+/** 允许在线编辑正文的页面（people-* 是动态页，排除；admin 页也排除）。 */
+const CONTENT_PAGES = [
+  'index.html', 'about.html', 'contact.html', 'help.html', 'copyright.html', 'suishu.html', 'x-tutu.html',
+  'rules-daily.html', 'rules-face.html', 'rules-study.html', 'rules-punish.html', 'rules-misc.html',
+  'youth-fun.html', 'youth-combo.html', 'youth-end.html', 'youth-epilogue.html', 'youth-credits.html',
+  'anec-legend.html', 'anec-clumsy.html', 'anec-wisdom.html', 'anec-custom.html', 'anec-lucky.html',
+];
+
 // ---------------------------------------------------------------- 配置
 function loadConfig() {
   let cfg = {};
@@ -44,21 +46,17 @@ function loadConfig() {
   if (!cfg.adminToken) { cfg.adminToken = crypto.randomBytes(18).toString('hex'); dirty = true; }
   if (typeof cfg.messagesModerated !== 'boolean') { cfg.messagesModerated = false; dirty = true; }
   if (typeof cfg.peopleModerated !== 'boolean') { cfg.peopleModerated = false; dirty = true; }
+  if (typeof cfg.commentsModerated !== 'boolean') { cfg.commentsModerated = false; dirty = true; }
   if (dirty) fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
   return cfg;
 }
 const CONFIG = loadConfig();
-
-function saveConfig() {
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(CONFIG, null, 2), 'utf8');
-}
-
-function publicSettings() {
-  return {
-    peopleModerated: CONFIG.peopleModerated,
-    messagesModerated: CONFIG.messagesModerated,
-  };
-}
+const saveConfig = () => fs.writeFileSync(CONFIG_FILE, JSON.stringify(CONFIG, null, 2), 'utf8');
+const publicSettings = () => ({
+  peopleModerated: CONFIG.peopleModerated,
+  messagesModerated: CONFIG.messagesModerated,
+  commentsModerated: CONFIG.commentsModerated,
+});
 
 // ---------------------------------------------------------------- 数据库
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -89,7 +87,6 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_messages ON messages(status, created_at DESC);
 
-  -- 删除申请：审核开启时，访客删词条不再直接生效，而是写一条请求等审批
   CREATE TABLE IF NOT EXISTS people_requests (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     kind        TEXT    NOT NULL DEFAULT 'delete',
@@ -101,6 +98,30 @@ db.exec(`
     from_hash   TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_requests ON people_requests(status, created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS comments (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    person_id  INTEGER NOT NULL,
+    name       TEXT NOT NULL DEFAULT '匿名',
+    text       TEXT NOT NULL,
+    status     TEXT NOT NULL DEFAULT 'published',
+    created_at INTEGER NOT NULL,
+    from_hash  TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_comments ON comments(person_id, status, created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS content_pages (
+    page       TEXT PRIMARY KEY,
+    html       TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS content_history (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    page     TEXT NOT NULL,
+    html     TEXT NOT NULL,
+    saved_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_content_history ON content_history(page, saved_at DESC);
 `);
 
 const q = {
@@ -110,15 +131,16 @@ const q = {
   insert: db.prepare(
     `INSERT INTO people (name,category,note,status,created_at,from_hash)
      VALUES (?,?,?,?,?,?)`),
+  updatePerson: db.prepare(
+    `UPDATE people SET name=?, category=?, note=?, updated_at=? WHERE id=?`),
   softDelete: db.prepare(`UPDATE people SET status='deleted', updated_at=? WHERE id=? AND status='published'`),
   setStatus: db.prepare(`UPDATE people SET status=?, updated_at=? WHERE id=?`),
   restore: db.prepare(`UPDATE people SET status='published', updated_at=? WHERE id=?`),
   purge: db.prepare(`DELETE FROM people WHERE id=?`),
   getPerson: db.prepare(`SELECT id,name,category,note,status,created_at FROM people WHERE id=?`),
   allPeople: db.prepare(`SELECT id,name,category,note,status,created_at FROM people ORDER BY id DESC`),
-  pendingPeople: db.prepare(
-    `SELECT id,name,category,note,status,created_at FROM people
-     WHERE status='pending' ORDER BY id ASC`),
+  countCommentsOf: db.prepare(
+    `SELECT person_id, COUNT(*) c FROM comments WHERE status='published' GROUP BY person_id`),
 
   listMsgs: db.prepare(
     `SELECT id,name,text,created_at FROM messages
@@ -132,23 +154,46 @@ const q = {
   addRequest: db.prepare(
     `INSERT INTO people_requests (kind,target_id,reason,status,created_at,from_hash)
      VALUES (?,?,?,'pending',?,?)`),
-  // 同一个人同一条重复申请只留一条
   findRequest: db.prepare(
-    `SELECT id FROM people_requests
-     WHERE kind='delete' AND target_id=? AND status='pending' LIMIT 1`),
+    `SELECT id FROM people_requests WHERE kind='delete' AND target_id=? AND status='pending' LIMIT 1`),
   listRequests: db.prepare(
     `SELECT r.id, r.kind, r.target_id, r.reason, r.status, r.created_at,
             p.name AS target_name, p.category AS target_category
      FROM people_requests r LEFT JOIN people p ON p.id = r.target_id
      ORDER BY r.status='pending' DESC, r.id DESC LIMIT 300`),
-  pendingRequests: db.prepare(
-    `SELECT r.id, r.kind, r.target_id, r.reason, r.status, r.created_at,
-            p.name AS target_name, p.category AS target_category
-     FROM people_requests r LEFT JOIN people p ON p.id = r.target_id
-     WHERE r.status='pending' ORDER BY r.id ASC`),
   getRequest: db.prepare(`SELECT * FROM people_requests WHERE id=?`),
   decideRequest: db.prepare(
     `UPDATE people_requests SET status=?, decided_at=? WHERE id=? AND status='pending'`),
+
+  // 词条留言
+  listComments: db.prepare(
+    `SELECT id,person_id,name,text,created_at FROM comments
+     WHERE person_id=? AND status='published' ORDER BY created_at ASC LIMIT 300`),
+  insertComment: db.prepare(
+    `INSERT INTO comments (person_id,name,text,status,created_at,from_hash) VALUES (?,?,?,?,?,?)`),
+  allComments: db.prepare(
+    `SELECT c.id,c.person_id,c.name,c.text,c.status,c.created_at,p.name AS person_name
+     FROM comments c LEFT JOIN people p ON p.id = c.person_id
+     ORDER BY c.id DESC LIMIT 800`),
+  setCommentStatus: db.prepare(`UPDATE comments SET status=? WHERE id=?`),
+  purgeComment: db.prepare(`DELETE FROM comments WHERE id=?`),
+  countPendingComments: db.prepare(`SELECT COUNT(*) c FROM comments WHERE status='pending'`),
+  countComments: db.prepare(`SELECT COUNT(*) c FROM comments WHERE status='published'`),
+
+  // 正文覆盖
+  getContent: db.prepare(`SELECT html,updated_at FROM content_pages WHERE page=?`),
+  putContent: db.prepare(
+    `INSERT INTO content_pages (page,html,updated_at) VALUES (?,?,?)
+     ON CONFLICT(page) DO UPDATE SET html=excluded.html, updated_at=excluded.updated_at`),
+  delContent: db.prepare(`DELETE FROM content_pages WHERE page=?`),
+  allContent: db.prepare(`SELECT page,updated_at FROM content_pages ORDER BY page`),
+  pushHistory: db.prepare(`INSERT INTO content_history (page,html,saved_at) VALUES (?,?,?)`),
+  listHistory: db.prepare(
+    `SELECT id,page,saved_at FROM content_history WHERE page=? ORDER BY saved_at DESC LIMIT 20`),
+  getHistory: db.prepare(`SELECT id,page,html,saved_at FROM content_history WHERE id=?`),
+  trimHistory: db.prepare(
+    `DELETE FROM content_history WHERE page=? AND id NOT IN
+     (SELECT id FROM content_history WHERE page=? ORDER BY saved_at DESC LIMIT 20)`),
 
   countPeople: db.prepare(`SELECT COUNT(*) c FROM people WHERE status='published'`),
   countMsgs: db.prepare(`SELECT COUNT(*) c FROM messages WHERE status='published'`),
@@ -160,7 +205,7 @@ const q = {
 function clientHash(req) {
   const xf = req.headers['x-forwarded-for'];
   const ip = xf ? String(xf).split(',')[0].trim() : ((req.socket && req.socket.remoteAddress) || '');
-  return crypto.createHash('sha256').update(ip).digest('hex').slice(0, 12);   // 不存原 IP
+  return crypto.createHash('sha256').update(ip).digest('hex').slice(0, 12);
 }
 
 const buckets = new Map();
@@ -184,7 +229,7 @@ function send(res, code, body) {
   res.end(isObj ? JSON.stringify(body) : String(body));
 }
 
-function readBody(req, limit = 64 * 1024) {
+function readBody(req, limit = 512 * 1024) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
@@ -219,37 +264,7 @@ const MIME = {
   '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
   '.txt': 'text/plain; charset=utf-8',
 };
-const DENY = [/^\/data\//i, /^\/config\.json$/i, /^\/server\.js$/i, /^\/\./];
-
-const LEGACY_PAGE_REDIRECTS = {
-  '/about.html': '/pages/info/about.html',
-  '/admin.html': '/pages/admin.html',
-  '/anec-clumsy.html': '/pages/anecdotes/anec-clumsy.html',
-  '/anec-custom.html': '/pages/anecdotes/anec-custom.html',
-  '/anec-legend.html': '/pages/anecdotes/anec-legend.html',
-  '/anec-lucky.html': '/pages/anecdotes/anec-lucky.html',
-  '/anec-wisdom.html': '/pages/anecdotes/anec-wisdom.html',
-  '/contact.html': '/pages/info/contact.html',
-  '/copyright.html': '/pages/info/copyright.html',
-  '/help.html': '/pages/info/help.html',
-  '/people-full.html': '/pages/people/people-full.html',
-  '/people-god.html': '/pages/people/people-god.html',
-  '/people-half.html': '/pages/people/people-half.html',
-  '/people-normal.html': '/pages/people/people-normal.html',
-  '/people-xx.html': '/pages/people/people-xx.html',
-  '/rules-daily.html': '/pages/rules/rules-daily.html',
-  '/rules-face.html': '/pages/rules/rules-face.html',
-  '/rules-misc.html': '/pages/rules/rules-misc.html',
-  '/rules-punish.html': '/pages/rules/rules-punish.html',
-  '/rules-study.html': '/pages/rules/rules-study.html',
-  '/suishu.html': '/pages/memories/suishu.html',
-  '/x-tutu.html': '/pages/anecdotes/x-tutu.html',
-  '/youth-combo.html': '/pages/memories/youth-combo.html',
-  '/youth-credits.html': '/pages/memories/youth-credits.html',
-  '/youth-end.html': '/pages/memories/youth-end.html',
-  '/youth-epilogue.html': '/pages/memories/youth-epilogue.html',
-  '/youth-fun.html': '/pages/memories/youth-fun.html'
-};
+const DENY = [/^\/data\//i, /^\/config\.json$/i, /^\/server\.js$/i, /^\/\./, /\.bak/i, /\.bak-\d/i];
 
 function serveStatic(req, res, pathname) {
   let rel = decodeURIComponent(pathname);
@@ -272,9 +287,25 @@ async function api(req, res, pathname) {
   const m = req.method;
   const h = clientHash(req);
 
+  // ---- 公开：当前开关
+  if (pathname === '/api/settings' && m === 'GET') {
+    return send(res, 200, { ok: true, settings: publicSettings() });
+  }
+
+  // ---- 公开：正文覆盖（没有覆盖时 html 为空串）
+  let cm = pathname.match(/^\/api\/content\/([\w.-]+)$/);
+  if (cm && m === 'GET') {
+    const page = cm[1];
+    if (!CONTENT_PAGES.includes(page)) return send(res, 404, { ok: false, error: '不是可编辑页面' });
+    const row = q.getContent.get(page);
+    return send(res, 200, { ok: true, page, html: row ? row.html : '', updatedAt: row ? row.updated_at : 0 });
+  }
+
   // ---- 公开：人物册
   if (pathname === '/api/people' && m === 'GET') {
-    return send(res, 200, { ok: true, items: q.listPublished.all() });
+    const items = q.listPublished.all();
+    const counts = new Map(q.countCommentsOf.all().map((r) => [r.person_id, r.c]));
+    return send(res, 200, { ok: true, items: items.map((it) => ({ ...it, comments: counts.get(it.id) || 0 })) });
   }
 
   if (pathname === '/api/people' && m === 'POST') {
@@ -304,6 +335,34 @@ async function api(req, res, pathname) {
     });
   }
 
+  // ---- 词条留言
+  let pm = pathname.match(/^\/api\/people\/(\d+)\/comments$/);
+  if (pm) {
+    const pid = Number(pm[1]);
+    if (m === 'GET') {
+      return send(res, 200, { ok: true, items: q.listComments.all(pid) });
+    }
+    if (m === 'POST') {
+      const limited = rateLimit('c' + h, 5000, 200);
+      if (limited) return send(res, 429, { ok: false, error: limited });
+      const target = q.getPerson.get(pid);
+      if (!target || target.status !== 'published') return send(res, 404, { ok: false, error: '这个词条不存在' });
+      const b = await readBody(req);
+      const name = clip(b.name, 20) || '匿名';
+      const text = clip(b.text, 400);
+      if (!text) return send(res, 400, { ok: false, error: '内容不能空' });
+      const moderated = CONFIG.commentsModerated;
+      const status = moderated ? 'pending' : 'published';
+      const now = Date.now();
+      const r = q.insertComment.run(pid, name, text, status, now, h);
+      return send(res, 200, {
+        ok: true, pending: moderated,
+        message: moderated ? '已提交，等管理员审核后才会显示' : '',
+        item: { id: Number(r.lastInsertRowid), person_id: pid, name, text, created_at: now },
+      });
+    }
+  }
+
   const mm = pathname.match(/^\/api\/people\/(\d+)$/);
   if (mm && m === 'DELETE') {
     const limited = rateLimit('d' + h, 3000, 200);
@@ -314,7 +373,6 @@ async function api(req, res, pathname) {
       return send(res, 404, { ok: false, error: '没有这条（可能已被删）' });
     }
     if (CONFIG.peopleModerated) {
-      // 审核开启：不直接删，落一条删除申请
       const dup = q.findRequest.get(id);
       if (dup) {
         return send(res, 202, {
@@ -356,11 +414,6 @@ async function api(req, res, pathname) {
     });
   }
 
-  // ---- 公开：当前开关状态（前端用来决定提示文案）
-  if (pathname === '/api/settings' && m === 'GET') {
-    return send(res, 200, { ok: true, settings: publicSettings() });
-  }
-
   // ---- 后台
   if (pathname.startsWith('/api/admin/')) {
     if (!isAdmin(req)) return send(res, 401, { ok: false, error: '管理口令不正确' });
@@ -372,11 +425,8 @@ async function api(req, res, pathname) {
     if (pathname === '/api/admin/settings' && m === 'POST') {
       const b = await readBody(req);
       const changed = [];
-      if (typeof b.peopleModerated === 'boolean' && b.peopleModerated !== CONFIG.peopleModerated) {
-        CONFIG.peopleModerated = b.peopleModerated; changed.push('peopleModerated');
-      }
-      if (typeof b.messagesModerated === 'boolean' && b.messagesModerated !== CONFIG.messagesModerated) {
-        CONFIG.messagesModerated = b.messagesModerated; changed.push('messagesModerated');
+      for (const k of ['peopleModerated', 'messagesModerated', 'commentsModerated']) {
+        if (typeof b[k] === 'boolean' && b[k] !== CONFIG[k]) { CONFIG[k] = b[k]; changed.push(k); }
       }
       if (changed.length) saveConfig();
       return send(res, 200, { ok: true, settings: publicSettings(), changed });
@@ -388,17 +438,20 @@ async function api(req, res, pathname) {
         people: q.allPeople.all(),
         messages: q.allMsgs.all(),
         requests: q.listRequests.all(),
+        comments: q.allComments.all(),
         settings: publicSettings(),
         stats: {
           people: q.countPeople.get().c,
           messages: q.countMsgs.get().c,
+          comments: q.countComments.get().c,
           pendingPeople: q.countPendingPeople.get().c,
           pendingRequests: q.countPendingRequests.get().c,
+          pendingComments: q.countPendingComments.get().c,
         },
       });
     }
 
-    // 管理员直接加词条（跳过审核）
+    // ---- 词条：管理员直接新增 / 编辑
     if (pathname === '/api/admin/people' && m === 'POST') {
       const b = await readBody(req);
       const name = clip(b.name, 40);
@@ -415,7 +468,22 @@ async function api(req, res, pathname) {
       });
     }
 
-    // 审批「访客新增」：approve / reject
+    let ep = pathname.match(/^\/api\/admin\/people\/(\d+)$/);
+    if (ep && m === 'POST') {
+      const id = Number(ep[1]);
+      const b = await readBody(req);
+      const row = q.getPerson.get(id);
+      if (!row) return send(res, 404, { ok: false, error: '没有这条' });
+      const name = b.name === undefined ? row.name : clip(b.name, 40);
+      const note = b.note === undefined ? row.note : clip(b.note, 1200);
+      const category = b.category === undefined ? row.category : clip(b.category, 10);
+      if (!name) return send(res, 400, { ok: false, error: '名字不能空' });
+      if (!note) return send(res, 400, { ok: false, error: '内容不能空' });
+      if (!CATEGORIES.includes(category)) return send(res, 400, { ok: false, error: '分类不合法' });
+      q.updatePerson.run(name, category, note, Date.now(), id);
+      return send(res, 200, { ok: true });
+    }
+
     if (pathname === '/api/admin/people-review' && m === 'POST') {
       const b = await readBody(req);
       const id = Number(b.id);
@@ -428,7 +496,6 @@ async function api(req, res, pathname) {
       return send(res, 400, { ok: false, error: 'action 只能是 approve / reject' });
     }
 
-    // 下架（published → hidden），可恢复
     if (pathname === '/api/admin/people-hide' && m === 'POST') {
       const b = await readBody(req);
       const id = Number(b.id);
@@ -438,7 +505,6 @@ async function api(req, res, pathname) {
       return send(res, 200, { ok: true });
     }
 
-    // 审批「删除申请」：approve / reject
     if (pathname === '/api/admin/delete-review' && m === 'POST') {
       const b = await readBody(req);
       const id = Number(b.id);
@@ -459,6 +525,79 @@ async function api(req, res, pathname) {
       return send(res, 400, { ok: false, error: 'action 只能是 approve / reject' });
     }
 
+    // ---- 留言 / 词条留言
+    if (pathname === '/api/admin/message-delete' && m === 'POST') {
+      const { id } = await readBody(req);
+      q.delMsg.run(Number(id));
+      return send(res, 200, { ok: true });
+    }
+
+    if (pathname === '/api/admin/comment' && m === 'POST') {
+      const b = await readBody(req);
+      const id = Number(b.id);
+      const action = String(b.action || '');
+      if (action === 'approve') { q.setCommentStatus.run('published', id); return send(res, 200, { ok: true }); }
+      if (action === 'reject') { q.setCommentStatus.run('rejected', id); return send(res, 200, { ok: true }); }
+      if (action === 'hide') { q.setCommentStatus.run('deleted', id); return send(res, 200, { ok: true }); }
+      return send(res, 400, { ok: false, error: 'action 只能是 approve / reject / hide' });
+    }
+
+    // ---- 正文编辑
+    if (pathname === '/api/admin/pages' && m === 'GET') {
+      const saved = new Map(q.allContent.all().map((r) => [r.page, r.updated_at]));
+      return send(res, 200, {
+        ok: true,
+        pages: CONTENT_PAGES.map((p) => ({ page: p, edited: saved.has(p), updatedAt: saved.get(p) || 0 })),
+      });
+    }
+
+    let cp = pathname.match(/^\/api\/admin\/content\/([\w.-]+)$/);
+    if (cp) {
+      const page = cp[1];
+      if (!CONTENT_PAGES.includes(page)) return send(res, 404, { ok: false, error: '不是可编辑页面' });
+      if (m === 'GET') {
+        const row = q.getContent.get(page);
+        return send(res, 200, {
+          ok: true, page,
+          html: row ? row.html : '',
+          updatedAt: row ? row.updated_at : 0,
+          history: q.listHistory.all(page),
+        });
+      }
+      if (m === 'POST') {
+        const b = await readBody(req);
+        if (typeof b.html !== 'string') return send(res, 400, { ok: false, error: 'html 必须是字符串' });
+        const now = Date.now();
+        const prev = q.getContent.get(page);
+        if (prev) q.pushHistory.run(page, prev.html, now);   // 保存前留一版旧的
+        q.putContent.run(page, b.html, now);
+        q.trimHistory.run(page, page);
+        return send(res, 200, { ok: true, page, updatedAt: now });
+      }
+    }
+
+    if (pathname === '/api/admin/content-reset' && m === 'POST') {
+      const b = await readBody(req);
+      const page = clip(b.page, 60);
+      if (!CONTENT_PAGES.includes(page)) return send(res, 404, { ok: false, error: '不是可编辑页面' });
+      const prev = q.getContent.get(page);
+      if (prev) q.pushHistory.run(page, prev.html, Date.now());
+      q.delContent.run(page);
+      return send(res, 200, { ok: true });
+    }
+
+    if (pathname === '/api/admin/content-history' && m === 'POST') {
+      const b = await readBody(req);
+      const id = Number(b.id);
+      const row = q.getHistory.get(id);
+      if (!row) return send(res, 404, { ok: false, error: '没有这版历史' });
+      const now = Date.now();
+      const cur = q.getContent.get(row.page);
+      if (cur) q.pushHistory.run(row.page, cur.html, now);
+      q.putContent.run(row.page, row.html, now);
+      return send(res, 200, { ok: true, page: row.page });
+    }
+
     if (pathname === '/api/admin/restore' && m === 'POST') {
       const { id } = await readBody(req);
       q.restore.run(Date.now(), Number(id));
@@ -467,13 +606,9 @@ async function api(req, res, pathname) {
 
     if (pathname === '/api/admin/purge' && m === 'POST') {
       const { id, type } = await readBody(req);
-      if (type === 'message') q.purgeMsg.run(Number(id)); else q.purge.run(Number(id));
-      return send(res, 200, { ok: true });
-    }
-
-    if (pathname === '/api/admin/message-delete' && m === 'POST') {
-      const { id } = await readBody(req);
-      q.delMsg.run(Number(id));
+      if (type === 'message') q.purgeMsg.run(Number(id));
+      else if (type === 'comment') q.purgeComment.run(Number(id));
+      else q.purge.run(Number(id));
       return send(res, 200, { ok: true });
     }
 
@@ -499,12 +634,6 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
-  const legacyPage = LEGACY_PAGE_REDIRECTS[pathname];
-  if (legacyPage) {
-    res.writeHead(301, { Location: legacyPage + new URL(req.url, 'http://x').search, 'Cache-Control': 'public, max-age=86400' });
-    res.end();
-    return;
-  }
   serveStatic(req, res, pathname);
 });
 
@@ -513,10 +642,12 @@ server.listen(PORT, HOST, () => {
   console.log('');
   console.log('  My Confession 已启动（SQLite）');
   console.log('  站点   : http://' + shown + ':' + PORT + '/');
-  console.log('  审核台 : http://' + shown + ':' + PORT + '/pages/admin.html');
+  console.log('  审核台 : http://' + shown + ':' + PORT + '/admin.html');
+  console.log('  正文编辑: http://' + shown + ':' + PORT + '/admin-content.html');
   console.log('  口令   : ' + CONFIG.adminToken);
   console.log('  词条审核 : ' + (CONFIG.peopleModerated ? '开' : '关') +
-              '   留言审核 : ' + (CONFIG.messagesModerated ? '开' : '关'));
+              '   留言审核 : ' + (CONFIG.messagesModerated ? '开' : '关') +
+              '   评论审核 : ' + (CONFIG.commentsModerated ? '开' : '关'));
   console.log('  数据库 : data/app.db');
   console.log('');
 });

@@ -1,4 +1,4 @@
-/* 人物册 + 留言板前端客户端（配合 server.js）
+/* 人物册 + 词条留言 + 留言板前端客户端（配合 server.js）
  * 原则：所有用户内容一律用 textContent 写入，不拼 innerHTML —— 天然免疫 XSS
  */
 (function () {
@@ -30,6 +30,126 @@
         var p = function (x) { return (x < 10 ? '0' : '') + x; };
         return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
             ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    }
+
+    /* ---------------- 词条留言 ---------------- */
+    function attachComments(it, card, onCountChange) {
+        var box = el('div', 'cmt-box');
+        var list = el('div', 'cmt-list');
+        var form = document.createElement('form');
+        form.className = 'cmt-form';
+
+        var nameIn = document.createElement('input');
+        nameIn.type = 'text';
+        nameIn.placeholder = '署名（可留空）';
+        nameIn.maxLength = 20;
+
+        var textIn = document.createElement('textarea');
+        textIn.placeholder = '说点什么…';
+        textIn.maxLength = 400;
+        textIn.rows = 2;
+
+        var sendBtn = document.createElement('button');
+        sendBtn.type = 'submit';
+        sendBtn.textContent = '发送';
+
+        var tip = el('span', 'cmt-tip');
+
+        var row = el('div', 'cmt-form-row');
+        row.appendChild(nameIn);
+        row.appendChild(textIn);
+        row.appendChild(sendBtn);
+        form.appendChild(row);
+        form.appendChild(tip);
+
+        var toggle = el('button', 'cmt-toggle');
+        toggle.type = 'button';
+        var count = it.comments || 0;
+        var loaded = false;
+        var open = false;
+
+        function label() {
+            toggle.textContent = (count > 0 ? '留言 ' + count : '写留言') + (open ? ' ▲' : ' ▼');
+        }
+
+        function renderList(items) {
+            list.textContent = '';
+            count = items.length;
+            if (onCountChange) { onCountChange(count); }
+            if (!items.length) {
+                list.appendChild(el('p', 'cmt-empty', '还没有人留言。'));
+                return;
+            }
+            items.forEach(function (c) {
+                var item = el('div', 'cmt-item');
+                var head = el('div', 'cmt-head');
+                head.appendChild(el('strong', null, c.name));
+                head.appendChild(el('span', 'cmt-time', fmtTime(c.created_at)));
+                item.appendChild(head);
+                item.appendChild(el('p', 'cmt-text', c.text));
+                list.appendChild(item);
+            });
+        }
+
+        function load() {
+            api('/api/people/' + it.id + '/comments').then(function (r) {
+                renderList((r.body && r.body.items) || []);
+                loaded = true;
+            }).catch(function () {
+                list.textContent = '';
+                list.appendChild(el('p', 'cmt-empty', '连不上服务'));
+            });
+        }
+
+        toggle.addEventListener('click', function () {
+            open = !open;
+            label();
+            box.style.display = open ? 'block' : 'none';
+            if (open && !loaded) { load(); }
+        });
+
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            var text = textIn.value.trim();
+            if (!text) { return; }
+            sendBtn.disabled = true;
+            api('/api/people/' + it.id + '/comments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: nameIn.value.trim(), text: text })
+            }).then(function (r) {
+                sendBtn.disabled = false;
+                if (r.body && r.body.ok) {
+                    textIn.value = '';
+                    if (r.body.pending) {
+                        tip.textContent = r.body.message || '已提交，等管理员审核';
+                        tip.className = 'cmt-tip ok';
+                    } else {
+                        tip.textContent = '已发送';
+                        tip.className = 'cmt-tip ok';
+                        load();
+                    }
+                } else {
+                    tip.textContent = (r.body && r.body.error) || '发送失败';
+                    tip.className = 'cmt-tip err';
+                }
+            }).catch(function () {
+                sendBtn.disabled = false;
+                tip.textContent = '连不上服务';
+                tip.className = 'cmt-tip err';
+            });
+        });
+
+        box.appendChild(list);
+        box.appendChild(form);
+        box.style.display = 'none';
+
+        var bar = el('div', 'cmt-bar');
+        bar.appendChild(toggle);
+        card.appendChild(bar);
+        card.appendChild(box);
+
+        label();
     }
 
     /* ---------------- 人物册 ---------------- */
@@ -72,6 +192,7 @@
                 head.appendChild(del);
                 card.appendChild(head);
                 card.appendChild(el('p', 'people-note', it.note));
+                attachComments(it, card);
                 list.appendChild(card);
             });
         }

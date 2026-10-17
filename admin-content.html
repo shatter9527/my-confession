@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>正文编辑 · My Confession</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%23207cca'/%3E%3Ctext x='50' y='70' font-size='56' text-anchor='middle' fill='%23ffffff' font-family='Georgia,serif'%3EE%3C/text%3E%3C/svg%3E">
+    <style>
+        html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; background: #eef2f6; }
+        .bar {
+            position: sticky; top: 0; z-index: 10; background: #fff; border-bottom: 1px solid #dfe4ea;
+            padding: 10px 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+        }
+        .bar h1 { font-size: 16px; margin: 0 8px 0 0; color: #2c3e50; }
+        .bar input[type=password] { flex: 1 1 260px; padding: 8px 10px; border: 1px solid #dfe4ea; border-radius: 6px; font-size: 13px; }
+        .bar select { padding: 8px 10px; border: 1px solid #dfe4ea; border-radius: 6px; font-size: 13px; min-width: 200px; }
+        .bar button {
+            padding: 8px 14px; border: none; border-radius: 6px; background: #3498db; color: #fff;
+            font-size: 13px; cursor: pointer;
+        }
+        .bar button:hover { background: #2980b9; }
+        .bar button.gray { background: #7f8c8d; }
+        .bar button.gray:hover { background: #626f70; }
+        .bar button.warn { background: #c0392b; }
+        .bar button.warn:hover { background: #962d22; }
+        .bar a { color: #3498db; text-decoration: none; font-size: 13px; margin-left: auto; }
+        .msg { padding: 6px 16px; font-size: 13px; color: #777; background: #f8f9fa; border-bottom: 1px solid #eef1f4; }
+        .msg.ok { color: #27ae60; }
+        .msg.err { color: #c0392b; }
+        iframe { width: 100%; height: calc(100vh - 108px); border: 0; background: #fff; display: block; }
+        .hidden { display: none !important; }
+        #history {
+            position: absolute; right: 16px; top: 58px; z-index: 20; background: #fff;
+            border: 1px solid #dfe4ea; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.12);
+            padding: 10px; min-width: 260px; max-height: 50vh; overflow: auto; font-size: 13px;
+        }
+        #history div { padding: 6px 8px; border-radius: 5px; cursor: pointer; display: flex; justify-content: space-between; gap: 12px; }
+        #history div:hover { background: #f4f8fd; }
+        #history .t { color: #7f8c8d; }
+    </style>
+</head>
+<body>
+
+<div class="bar">
+    <h1>✎ 正文编辑</h1>
+    <input type="password" id="token" placeholder="管理口令" autocomplete="off">
+    <button id="btn-token">载入</button>
+    <select id="page"><option value="">— 选择页面 —</option></select>
+    <button id="btn-save">保存</button>
+    <button id="btn-reset" class="warn">恢复默认</button>
+    <button id="btn-history" class="gray">历史版本</button>
+    <button id="btn-reload" class="gray">重新载入</button>
+    <a href="admin.html">← 回审核台</a>
+</div>
+<div class="msg" id="msg">先粘贴管理口令，再选一个页面。</div>
+<div id="history" class="hidden"></div>
+<iframe id="frame" src="about:blank" title="editor"></iframe>
+
+<script>
+(function () {
+    'use strict';
+    var $ = function (id) { return document.getElementById(id); };
+    var token = localStorage.getItem('mf_admin_token') || '';
+    $('token').value = token;
+    var current = '';
+
+    function setMsg(t, cls) {
+        $('msg').textContent = t || '';
+        $('msg').className = 'msg' + (cls ? ' ' + cls : '');
+    }
+
+    function api(path, opt) {
+        opt = opt || {};
+        opt.headers = Object.assign({ 'x-admin-token': token }, opt.headers || {});
+        return fetch(path, opt).then(function (r) {
+            return r.json().then(function (j) { return { status: r.status, body: j }; });
+        });
+    }
+    function post(path, payload) {
+        return api(path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload || {})
+        });
+    }
+
+    function loadPages() {
+        if (!token) { setMsg('先粘贴管理口令再点「载入」', 'err'); return; }
+        api('/api/admin/pages').then(function (r) {
+            if (r.status === 401) { setMsg('口令不正确', 'err'); return; }
+            if (!r.body || !r.body.ok) { setMsg('读取页面列表失败', 'err'); return; }
+            localStorage.setItem('mf_admin_token', token);
+            var sel = $('page');
+            sel.textContent = '';
+            var opt0 = document.createElement('option');
+            opt0.value = ''; opt0.textContent = '— 选择页面 —';
+            sel.appendChild(opt0);
+            r.body.pages.forEach(function (p) {
+                var o = document.createElement('option');
+                o.value = p.page;
+                o.textContent = p.page + (p.edited ? '（已改过）' : '');
+                sel.appendChild(o);
+            });
+            $('btn-token').disabled = true;
+            setMsg('选择页面开始编辑；正文区域点进去就能直接改字。', 'ok');
+        }).catch(function () { setMsg('连不上服务', 'err'); });
+    }
+
+    function enableEditing() {
+        var fr = $('frame');
+        var doc;
+        try { doc = fr.contentDocument; } catch (e) { setMsg('无法访问页面内容（跨域）', 'err'); return; }
+        if (!doc) { return; }
+        var box = doc.querySelector('.content-left');
+        if (!box) { setMsg('这个页面没有可编辑的正文区', 'err'); return; }
+
+        // 编辑期禁用链接跳转
+        doc.addEventListener('click', function (e) {
+            var a = e.target.closest && e.target.closest('a');
+            if (a) { e.preventDefault(); }
+        }, true);
+
+        box.setAttribute('contenteditable', 'true');
+        box.style.outline = '2px dashed #9ecbf0';
+        box.style.outlineOffset = '6px';
+        box.title = '这一整块可以直接编辑';
+
+        setMsg('已进入编辑：点进正文改字即可，改完点「保存」。', 'ok');
+    }
+
+    function openPage(page) {
+        if (!page) { $('frame').src = 'about:blank'; return; }
+        current = page;
+        $('history').classList.add('hidden');
+        $('frame').src = page + '?edit=' + Date.now();
+    }
+
+    $('frame').addEventListener('load', function () {
+        if (!current) { return; }
+        // content.js 会异步套用覆盖内容，等它落定再开放编辑
+        setTimeout(enableEditing, 600);
+    });
+
+    $('btn-token').addEventListener('click', function () {
+        token = $('token').value.trim();
+        $('btn-token').disabled = false;
+        loadPages();
+    });
+    $('token').addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') { $('btn-token').click(); }
+    });
+    $('page').addEventListener('change', function () { openPage(this.value); });
+    $('btn-reload').addEventListener('click', function () {
+        if (!current) { setMsg('先选一个页面', 'err'); return; }
+        openPage(current);
+    });
+
+    $('btn-save').addEventListener('click', function () {
+        if (!current) { setMsg('先选一个页面', 'err'); return; }
+        var fr = $('frame');
+        var box = fr.contentDocument && fr.contentDocument.querySelector('.content-left');
+        if (!box) { setMsg('拿不到正文内容', 'err'); return; }
+        var html = box.innerHTML;
+        if (!confirm('保存后，所有访客看到的「' + current + '」正文都会变成现在这样。\n旧版本会自动存进历史，可以随时恢复。\n\n确定保存？')) { return; }
+        post('/api/admin/content/' + encodeURIComponent(current), { html: html }).then(function (r) {
+            if (r.body && r.body.ok) { setMsg('已保存（' + current + '）', 'ok'); }
+            else { setMsg((r.body && r.body.error) || '保存失败', 'err'); }
+        }).catch(function () { setMsg('连不上服务', 'err'); });
+    });
+
+    $('btn-reset').addEventListener('click', function () {
+        if (!current) { setMsg('先选一个页面', 'err'); return; }
+        if (!confirm('恢复成 HTML 文件里的原始内容？\n当前的编辑会进历史，可以再恢复回来。')) { return; }
+        post('/api/admin/content-reset', { page: current }).then(function (r) {
+            if (r.body && r.body.ok) { setMsg('已恢复默认', 'ok'); openPage(current); }
+            else { setMsg((r.body && r.body.error) || '恢复失败', 'err'); }
+        });
+    });
+
+    $('btn-history').addEventListener('click', function () {
+        if (!current) { setMsg('先选一个页面', 'err'); return; }
+        api('/api/admin/content/' + encodeURIComponent(current)).then(function (r) {
+            if (!r.body || !r.body.ok) { setMsg('读取历史失败', 'err'); return; }
+            var box = $('history');
+            box.textContent = '';
+            var list = r.body.history || [];
+            if (!list.length) {
+                var p = document.createElement('div');
+                p.textContent = '还没有历史版本';
+                box.appendChild(p);
+            }
+            list.forEach(function (h) {
+                var d = document.createElement('div');
+                var t = document.createElement('span');
+                t.className = 't';
+                t.textContent = new Date(h.saved_at).toLocaleString();
+                var b = document.createElement('span');
+                b.textContent = '恢复这版';
+                b.style.color = '#3498db';
+                d.appendChild(t); d.appendChild(b);
+                d.addEventListener('click', function () {
+                    if (!confirm('恢复到这个时间点的版本？当前内容会先进历史。')) return;
+                    post('/api/admin/content-history', { id: h.id }).then(function (rr) {
+                        if (rr.body && rr.body.ok) {
+                            box.classList.add('hidden');
+                            setMsg('已恢复到 ' + new Date(h.saved_at).toLocaleString(), 'ok');
+                            openPage(current);
+                        } else { setMsg('恢复失败', 'err'); }
+                    });
+                });
+                box.appendChild(d);
+            });
+            box.classList.remove('hidden');
+        });
+    });
+
+    if (token) { loadPages(); }
+})();
+</script>
+</body>
+</html>
