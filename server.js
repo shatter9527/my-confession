@@ -56,6 +56,25 @@ function scanContentPages() {
 const PAGES = scanContentPages();
 const PAGE_MAP = new Map(PAGES.map((p) => [p.page, p.path]));
 
+/** 找某个文件名在树里的相对路径（后台页位置会随重构变，不写死）。 */
+function findFile(name) {
+  let found = name;
+  (function walk(dir, rel) {
+    if (found !== name) return;
+    let ents;
+    try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      if (e.name.startsWith('.')) continue;
+      const r = rel ? rel + '/' + e.name : e.name;
+      if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name)) walk(path.join(dir, e.name), r); continue; }
+      if (e.name === name) { found = r; return; }
+    }
+  })(ROOT, '');
+  return found;
+}
+const ADMIN_PAGE = findFile('admin.html');
+const EDITOR_PAGE = findFile('admin-content.html');
+
 // ---------------------------------------------------------------- 配置
 function loadConfig() {
   let cfg = {};
@@ -705,8 +724,8 @@ server.listen(PORT, HOST, () => {
   console.log('');
   console.log('  My Confession 已启动（SQLite）');
   console.log('  站点   : http://' + shown + ':' + PORT + '/');
-  console.log('  审核台 : http://' + shown + ':' + PORT + '/pages/admin.html');
-  console.log('  正文编辑: http://' + shown + ':' + PORT + '/pages/admin-content.html');
+  console.log('  审核台 : http://' + shown + ':' + PORT + '/' + ADMIN_PAGE);
+  console.log('  正文编辑: http://' + shown + ':' + PORT + '/' + EDITOR_PAGE);
   console.log('  口令   : ' + CONFIG.adminToken);
   console.log('  词条审核 : ' + (CONFIG.peopleModerated ? '开' : '关') +
               '   留言审核 : ' + (CONFIG.messagesModerated ? '开' : '关') +
