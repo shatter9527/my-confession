@@ -185,6 +185,29 @@
                 <tbody id="tb-msg"></tbody>
             </table>
         </div>
+
+        <h2 class="sec">管理员</h2>
+        <div class="card">
+            <div class="form-row">
+                <input id="tk-name" maxlength="20" placeholder="给这个人起个名字（如：李四）">
+                <button id="btn-add-token">生成新令牌</button>
+            </div>
+            <div class="msg-line" id="tk-new"></div>
+        </div>
+        <div class="tbl-wrap">
+            <table class="tbl">
+                <thead><tr><th>名字</th><th>令牌</th><th>创建</th><th>最近使用</th><th>操作</th></tr></thead>
+                <tbody id="tb-tokens"></tbody>
+            </table>
+        </div>
+
+        <h2 class="sec">操作日志</h2>
+        <div class="tbl-wrap">
+            <table class="tbl">
+                <thead><tr><th>时间</th><th>谁</th><th>做了什么</th><th>对象</th><th>备注</th></tr></thead>
+                <tbody id="tb-audit"></tbody>
+            </table>
+        </div>
     </div>
 </div>
 
@@ -506,9 +529,87 @@
             renderPeople(r.body.people || []);
             renderAllComments(r.body.comments || []);
             renderMsgs(r.body.messages || []);
+            loadTokens();
+            loadAudit();
             setStatus('已载入', 'ok');
         }).catch(function () {
             setStatus('连不上服务 —— 先运行 node server.js', 'err');
+        });
+    }
+
+    // ---------- 管理员令牌
+    function fmtDate(ms) {
+        if (!ms) return '—';
+        var d = new Date(Number(ms));
+        var p = function (x) { return String(x).padStart(2, '0'); };
+        return p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    }
+
+    function loadTokens() {
+        api('/api/admin/tokens').then(function (r) {
+            if (!r.body || !r.body.ok) return;
+            var tb = $('tb-tokens');
+            tb.textContent = '';
+            r.body.tokens.forEach(function (a) {
+                var tr = document.createElement('tr');
+                cell(tr, a.name + (a.self ? '（你）' : ''));
+                cell(tr, a.hint);
+                cell(tr, fmtDate(a.createdAt));
+                cell(tr, a.lastUsedAt ? fmtDate(a.lastUsedAt) : '还没用过');
+                var ops = document.createElement('td');
+                if (a.self) {
+                    cell(ops, '当前使用中');
+                } else {
+                    ops.appendChild(btn('吊销', 'warn', function () {
+                        if (!confirm('吊销「' + a.name + '」的令牌？他那边会立刻失去后台权限。')) return;
+                        post('/api/admin/tokens/revoke', { id: a.id }).then(function (rr) {
+                            if (rr.body && rr.body.ok) { setStatus('已吊销', 'ok'); loadTokens(); }
+                            else setStatus((rr.body && rr.body.error) || '吊销失败', 'err');
+                        });
+                    }));
+                }
+                tr.appendChild(ops);
+                tb.appendChild(tr);
+            });
+        });
+    }
+
+    $('btn-add-token').addEventListener('click', function () {
+        if (!token) { setStatus('先载入口令', 'err'); return; }
+        var name = $('tk-name').value.trim();
+        if (!name) { setStatus('给这个人起个名字', 'err'); return; }
+        post('/api/admin/tokens', { name: name }).then(function (r) {
+            if (r.body && r.body.ok) {
+                $('tk-name').value = '';
+                $('tk-new').textContent = '「' + r.body.name + '」的令牌（只显示这一次，复制给他）：' + r.body.token;
+                $('tk-new').style.color = '#c0392b';
+                loadTokens();
+            } else {
+                setStatus((r.body && r.body.error) || '生成失败', 'err');
+            }
+        });
+    });
+
+    // ---------- 操作日志
+    function loadAudit() {
+        api('/api/admin/audit').then(function (r) {
+            if (!r.body || !r.body.ok) return;
+            var tb = $('tb-audit');
+            tb.textContent = '';
+            r.body.items.forEach(function (a) {
+                var tr = document.createElement('tr');
+                cell(tr, fmtDate(a.created_at));
+                cell(tr, a.admin_name);
+                cell(tr, a.action);
+                cell(tr, a.target);
+                cell(tr, a.detail, 'note');
+                tb.appendChild(tr);
+            });
+            if (!r.body.items.length) {
+                var tr0 = document.createElement('tr');
+                cell(tr0, '还没有操作记录');
+                tb.appendChild(tr0);
+            }
         });
     }
 

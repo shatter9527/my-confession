@@ -1,4 +1,4 @@
-﻿/**
+/**
  * My Confession 后端 —— 零依赖单文件：node server.js
  * 存储：SQLite（Node 24 内置 node:sqlite，不需要 npm install）
  *
@@ -76,13 +76,31 @@ const ADMIN_PAGE = findFile('admin.html');
 const EDITOR_PAGE = findFile('admin-content.html');
 
 // ---------------------------------------------------------------- 配置
+function newToken() {
+  return crypto.randomBytes(18).toString('hex');
+}
+
 function loadConfig() {
   let cfg = {};
   if (fs.existsSync(CONFIG_FILE)) {
     try { cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch { cfg = {}; }
   }
   let dirty = false;
-  if (!cfg.adminToken) { cfg.adminToken = crypto.randomBytes(18).toString('hex'); dirty = true; }
+
+  // 多管理员：每个令牌一条记录。旧的单 adminToken 自动迁移成「默认」。
+  if (!Array.isArray(cfg.adminTokens)) { cfg.adminTokens = []; dirty = true; }
+  if (cfg.adminTokens.length === 0) {
+    cfg.adminTokens.push({
+      id: 'a1',
+      name: '默认',
+      token: cfg.adminToken || newToken(),
+      createdAt: Date.now(),
+      lastUsedAt: 0,
+    });
+    dirty = true;
+  }
+  delete cfg.adminToken;   // 只保留 adminTokens，避免同一个口令存两处
+
   if (typeof cfg.messagesModerated !== 'boolean') { cfg.messagesModerated = false; dirty = true; }
   if (typeof cfg.peopleModerated !== 'boolean') { cfg.peopleModerated = false; dirty = true; }
   if (typeof cfg.commentsModerated !== 'boolean') { cfg.commentsModerated = false; dirty = true; }
@@ -161,6 +179,18 @@ db.exec(`
     saved_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_content_history ON content_history(page, saved_at DESC);
+
+  -- 管理员操作日志：谁、做了什么、对象是谁、什么时候
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_id   TEXT NOT NULL DEFAULT '',
+    admin_name TEXT NOT NULL DEFAULT '',
+    action     TEXT NOT NULL,
+    target     TEXT NOT NULL DEFAULT '',
+    detail     TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_audit ON audit_log(created_at DESC);
 `);
 
 const q = {
@@ -238,6 +268,15 @@ const q = {
   countMsgs: db.prepare(`SELECT COUNT(*) c FROM messages WHERE status='published'`),
   countPendingPeople: db.prepare(`SELECT COUNT(*) c FROM people WHERE status='pending'`),
   countPendingRequests: db.prepare(`SELECT COUNT(*) c FROM people_requests WHERE status='pending'`),
+
+  // 操作日志
+  insertAudit: db.prepare(
+    `INSERT INTO audit_log (admin_id,admin_name,action,target,detail,created_at)
+     VALUES (?,?,?,?,?,?)`),
+  listAudit: db.prepare(
+    `SELECT id,admin_id,admin_name,action,target,detail,created_at
+     FROM audit_log ORDER BY id DESC LIMIT 200`),
+  trimAudit: db.prepare(`DELETE FROM audit_log WHERE id <= (SELECT MAX(id) FROM audit_log) - 2000`),
 };
 
 // ---------------------------------------------------------------- 工具
@@ -287,11 +326,43 @@ function readBody(req, limit = 512 * 1024) {
 
 const clip = (v, n) => String(v == null ? '' : v).replace(/\u0000/g, '').trim().slice(0, n);
 
-function isAdmin(req) {
-  const t = req.headers['x-admin-token'];
-  if (!t) return false;
-  const a = Buffer.from(String(t)), b = Buffer.from(String(CONFIG.adminToken));
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
+/**
+ * 认出请求来自哪个管理员。命中返回 {id,name,token,...}，否则 null。
+ * 顺手更新 lastUsedAt（节流 60 秒，避免每个请求都写盘）。
+ */
+function adminOf(req) {
+  const raw = req.headers['x-admin-token'];
+  if (!raw) return null;
+  const given = Buffer.from(String(raw));
+  for (const a of CONFIG.adminTokens) {
+    const want = Buffer.from(String(a.token || ''));
+    if (given.length !== want.length) continue;
+    if (!crypto.timingSafeEqual(given, want)) continue;
+    const now = Date.now();
+    if (!a.lastUsedAt || now - a.lastUsedAt > 60000) {
+      a.lastUsedAt = now;
+      try { saveConfig(); } catch { /* 写盘失败不影响鉴权 */ }
+    }
+    return a;
+  }
+  return null;
+}
+
+/** 记一条管理员操作。失败不抛（日志不该拖垮业务）。 */
+function audit(admin, action, target, detail) {
+  try {
+    q.insertAudit.run(
+      admin ? String(admin.id) : '',
+      admin ? String(admin.name) : '未知',
+      String(action),
+      String(target == null ? '' : target),
+      String(detail == null ? '' : detail).slice(0, 300),
+      Date.now(),
+    );
+    q.trimAudit.run();
+  } catch (e) {
+    console.error('[audit]', e && e.message);
+  }
 }
 
 const MIME = {
@@ -489,7 +560,8 @@ async function api(req, res, pathname) {
 
   // ---- 后台
   if (pathname.startsWith('/api/admin/')) {
-    if (!isAdmin(req)) return send(res, 401, { ok: false, error: '管理口令不正确' });
+    const admin = adminOf(req);
+    if (!admin) return send(res, 401, { ok: false, error: '管理口令不正确' });
 
     if (pathname === '/api/admin/settings' && m === 'GET') {
       return send(res, 200, { ok: true, settings: publicSettings() });
@@ -501,7 +573,10 @@ async function api(req, res, pathname) {
       for (const k of ['peopleModerated', 'messagesModerated', 'commentsModerated']) {
         if (typeof b[k] === 'boolean' && b[k] !== CONFIG[k]) { CONFIG[k] = b[k]; changed.push(k); }
       }
-      if (changed.length) saveConfig();
+      if (changed.length) {
+        saveConfig();
+        audit(admin, '保存审核开关', '', changed.join(', '));
+      }
       return send(res, 200, { ok: true, settings: publicSettings(), changed });
     }
 
@@ -535,6 +610,7 @@ async function api(req, res, pathname) {
       if (!CATEGORIES.includes(category)) return send(res, 400, { ok: false, error: '分类不合法' });
       const now = Date.now();
       const r = q.insert.run(name, category, note, 'published', now, 'admin');
+      audit(admin, '新增词条', name, category);
       return send(res, 200, {
         ok: true,
         item: { id: Number(r.lastInsertRowid), name, category, note, status: 'published', created_at: now },
@@ -554,6 +630,7 @@ async function api(req, res, pathname) {
       if (!note) return send(res, 400, { ok: false, error: '内容不能空' });
       if (!CATEGORIES.includes(category)) return send(res, 400, { ok: false, error: '分类不合法' });
       q.updatePerson.run(name, category, note, Date.now(), id);
+      audit(admin, '编辑词条', '#' + id + ' ' + name);
       return send(res, 200, { ok: true });
     }
 
@@ -564,8 +641,8 @@ async function api(req, res, pathname) {
       const row = q.getPerson.get(id);
       if (!row) return send(res, 404, { ok: false, error: '没有这条' });
       if (row.status !== 'pending') return send(res, 409, { ok: false, error: '这条不在待审核状态' });
-      if (action === 'approve') { q.setStatus.run('published', Date.now(), id); return send(res, 200, { ok: true }); }
-      if (action === 'reject') { q.setStatus.run('rejected', Date.now(), id); return send(res, 200, { ok: true }); }
+      if (action === 'approve') { q.setStatus.run('published', Date.now(), id); audit(admin, '通过词条', '#' + id + ' ' + row.name); return send(res, 200, { ok: true }); }
+      if (action === 'reject') { q.setStatus.run('rejected', Date.now(), id); audit(admin, '驳回词条', '#' + id + ' ' + row.name); return send(res, 200, { ok: true }); }
       return send(res, 400, { ok: false, error: 'action 只能是 approve / reject' });
     }
 
@@ -575,6 +652,7 @@ async function api(req, res, pathname) {
       const row = q.getPerson.get(id);
       if (!row) return send(res, 404, { ok: false, error: '没有这条' });
       q.setStatus.run('hidden', Date.now(), id);
+      audit(admin, '下架词条', '#' + id + ' ' + row.name);
       return send(res, 200, { ok: true });
     }
 
@@ -589,10 +667,12 @@ async function api(req, res, pathname) {
       if (action === 'approve') {
         q.setStatus.run('deleted', now, Number(reqRow.target_id));
         q.decideRequest.run('approved', now, id);
+        audit(admin, '批准删除词条', '#' + reqRow.target_id);
         return send(res, 200, { ok: true });
       }
       if (action === 'reject') {
         q.decideRequest.run('rejected', now, id);
+        audit(admin, '驳回删除申请', '#' + reqRow.target_id);
         return send(res, 200, { ok: true });
       }
       return send(res, 400, { ok: false, error: 'action 只能是 approve / reject' });
@@ -602,6 +682,7 @@ async function api(req, res, pathname) {
     if (pathname === '/api/admin/message-delete' && m === 'POST') {
       const { id } = await readBody(req);
       q.delMsg.run(Number(id));
+      audit(admin, '隐藏留言', '#' + id);
       return send(res, 200, { ok: true });
     }
 
@@ -609,9 +690,13 @@ async function api(req, res, pathname) {
       const b = await readBody(req);
       const id = Number(b.id);
       const action = String(b.action || '');
-      if (action === 'approve') { q.setCommentStatus.run('published', id); return send(res, 200, { ok: true }); }
-      if (action === 'reject') { q.setCommentStatus.run('rejected', id); return send(res, 200, { ok: true }); }
-      if (action === 'hide') { q.setCommentStatus.run('deleted', id); return send(res, 200, { ok: true }); }
+      const LABEL = { approve: '通过评论', reject: '驳回评论', hide: '隐藏评论' };
+      const NEXT = { approve: 'published', reject: 'rejected', hide: 'deleted' };
+      if (NEXT[action]) {
+        q.setCommentStatus.run(NEXT[action], id);
+        audit(admin, LABEL[action], '#' + id);
+        return send(res, 200, { ok: true });
+      }
       return send(res, 400, { ok: false, error: 'action 只能是 approve / reject / hide' });
     }
 
@@ -645,6 +730,7 @@ async function api(req, res, pathname) {
         if (prev) q.pushHistory.run(page, prev.html, now);   // 保存前留一版旧的
         q.putContent.run(page, b.html, now);
         q.trimHistory.run(page, page);
+        audit(admin, '保存正文', page, b.html.length + ' 字符');
         return send(res, 200, { ok: true, page, updatedAt: now });
       }
     }
@@ -656,6 +742,7 @@ async function api(req, res, pathname) {
       const prev = q.getContent.get(page);
       if (prev) q.pushHistory.run(page, prev.html, Date.now());
       q.delContent.run(page);
+      audit(admin, '恢复正文默认', page);
       return send(res, 200, { ok: true });
     }
 
@@ -668,12 +755,14 @@ async function api(req, res, pathname) {
       const cur = q.getContent.get(row.page);
       if (cur) q.pushHistory.run(row.page, cur.html, now);
       q.putContent.run(row.page, row.html, now);
+      audit(admin, '回滚正文', row.page, new Date(row.saved_at).toLocaleString());
       return send(res, 200, { ok: true, page: row.page });
     }
 
     if (pathname === '/api/admin/restore' && m === 'POST') {
       const { id } = await readBody(req);
       q.restore.run(Date.now(), Number(id));
+      audit(admin, '恢复为在线', '#' + id);
       return send(res, 200, { ok: true });
     }
 
@@ -682,7 +771,55 @@ async function api(req, res, pathname) {
       if (type === 'message') q.purgeMsg.run(Number(id));
       else if (type === 'comment') q.purgeComment.run(Number(id));
       else q.purge.run(Number(id));
+      audit(admin, '彻底删除', (type || 'person') + ' #' + id);
       return send(res, 200, { ok: true });
+    }
+
+    // ---- 多管理员令牌
+    if (pathname === '/api/admin/tokens' && m === 'GET') {
+      return send(res, 200, {
+        ok: true,
+        me: admin.id,
+        tokens: CONFIG.adminTokens.map((a) => ({
+          id: a.id,
+          name: a.name,
+          hint: String(a.token).slice(0, 6) + '…' + String(a.token).slice(-4),
+          createdAt: a.createdAt || 0,
+          lastUsedAt: a.lastUsedAt || 0,
+          self: a.id === admin.id,
+        })),
+      });
+    }
+
+    if (pathname === '/api/admin/tokens' && m === 'POST') {
+      const b = await readBody(req);
+      const name = clip(b.name, 20);
+      if (!name) return send(res, 400, { ok: false, error: '给这个人起个名字' });
+      if (CONFIG.adminTokens.some((a) => a.name === name)) {
+        return send(res, 409, { ok: false, error: '已经有同名管理员了' });
+      }
+      const id = 'a' + Date.now().toString(36);
+      const token = newToken();
+      CONFIG.adminTokens.push({ id, name, token, createdAt: Date.now(), lastUsedAt: 0 });
+      saveConfig();
+      audit(admin, '新增管理员', name);
+      return send(res, 200, { ok: true, id, name, token });
+    }
+
+    if (pathname === '/api/admin/tokens/revoke' && m === 'POST') {
+      const b = await readBody(req);
+      const id = clip(b.id, 40);
+      if (id === admin.id) return send(res, 400, { ok: false, error: '不能吊销自己正在用的这把' });
+      const idx = CONFIG.adminTokens.findIndex((a) => a.id === id);
+      if (idx < 0) return send(res, 404, { ok: false, error: '没有这个管理员' });
+      const gone = CONFIG.adminTokens.splice(idx, 1)[0];
+      saveConfig();
+      audit(admin, '吊销管理员', gone.name);
+      return send(res, 200, { ok: true });
+    }
+
+    if (pathname === '/api/admin/audit' && m === 'GET') {
+      return send(res, 200, { ok: true, items: q.listAudit.all() });
     }
 
     if (pathname === '/api/admin/snapshot' && m === 'POST') {
