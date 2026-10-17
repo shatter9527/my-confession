@@ -284,7 +284,41 @@ const MIME = {
   '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
   '.txt': 'text/plain; charset=utf-8',
 };
-const DENY = [/^\/data\//i, /^\/config\.json$/i, /^\/server\.js$/i, /^\/\./, /\.bak/i, /\.bak-\d/i];
+const DENY = [/^\/data\//i, /^\/materials\//i, /^\/config\.json$/i, /^\/server\.js$/i, /^\/\./, /\.bak/i, /\.bak-\d/i];
+
+const LEGACY_STATIC_REDIRECTS = {
+  '/Screenshot_2025-05-14-10-20-03-636_com.tencent.mm-edit.jpg': '/assets/media/Screenshot_2025-05-14-10-20-03-636_com.tencent.mm-edit.jpg',
+  '/about.html': '/pages/info/about.html',
+  '/admin-content.html': '/pages/admin-content.html',
+  '/admin.html': '/pages/admin.html',
+  '/anec-clumsy.html': '/pages/anecdotes/anec-clumsy.html',
+  '/anec-custom.html': '/pages/anecdotes/anec-custom.html',
+  '/anec-legend.html': '/pages/anecdotes/anec-legend.html',
+  '/anec-lucky.html': '/pages/anecdotes/anec-lucky.html',
+  '/anec-wisdom.html': '/pages/anecdotes/anec-wisdom.html',
+  '/contact.html': '/pages/info/contact.html',
+  '/copyright.html': '/pages/info/copyright.html',
+  '/help.html': '/pages/info/help.html',
+  '/nanchenglu-54-15-2.m4a': '/assets/media/nanchenglu-54-15-2.m4a',
+  '/nanchenglu-54-15.m4a': '/assets/media/nanchenglu-54-15.m4a',
+  '/people-full.html': '/pages/people/people-full.html',
+  '/people-god.html': '/pages/people/people-god.html',
+  '/people-half.html': '/pages/people/people-half.html',
+  '/people-normal.html': '/pages/people/people-normal.html',
+  '/people-xx.html': '/pages/people/people-xx.html',
+  '/rules-daily.html': '/pages/rules/rules-daily.html',
+  '/rules-face.html': '/pages/rules/rules-face.html',
+  '/rules-misc.html': '/pages/rules/rules-misc.html',
+  '/rules-punish.html': '/pages/rules/rules-punish.html',
+  '/rules-study.html': '/pages/rules/rules-study.html',
+  '/suishu.html': '/pages/memories/suishu.html',
+  '/x-tutu.html': '/pages/anecdotes/x-tutu.html',
+  '/youth-combo.html': '/pages/memories/youth-combo.html',
+  '/youth-credits.html': '/pages/memories/youth-credits.html',
+  '/youth-end.html': '/pages/memories/youth-end.html',
+  '/youth-epilogue.html': '/pages/memories/youth-epilogue.html',
+  '/youth-fun.html': '/pages/memories/youth-fun.html'
+};
 
 function serveStatic(req, res, pathname) {
   let rel = decodeURIComponent(pathname);
@@ -654,6 +688,15 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  const legacyTarget = LEGACY_STATIC_REDIRECTS[pathname];
+  if (legacyTarget) {
+    res.writeHead(301, {
+      Location: legacyTarget + new URL(req.url, 'http://x').search,
+      'Cache-Control': 'public, max-age=86400',
+    });
+    res.end();
+    return;
+  }
   serveStatic(req, res, pathname);
 });
 
@@ -662,8 +705,8 @@ server.listen(PORT, HOST, () => {
   console.log('');
   console.log('  My Confession 已启动（SQLite）');
   console.log('  站点   : http://' + shown + ':' + PORT + '/');
-  console.log('  审核台 : http://' + shown + ':' + PORT + '/admin.html');
-  console.log('  正文编辑: http://' + shown + ':' + PORT + '/admin-content.html');
+  console.log('  审核台 : http://' + shown + ':' + PORT + '/pages/admin.html');
+  console.log('  正文编辑: http://' + shown + ':' + PORT + '/pages/admin-content.html');
   console.log('  口令   : ' + CONFIG.adminToken);
   console.log('  词条审核 : ' + (CONFIG.peopleModerated ? '开' : '关') +
               '   留言审核 : ' + (CONFIG.messagesModerated ? '开' : '关') +

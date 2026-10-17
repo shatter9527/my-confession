@@ -21,6 +21,7 @@ node --check backup.js
 ```text
 index.html             首页入口
 1.5.html               旧首页兼容入口
+assets/media/          首页图片和录音
 css/style.css          全站样式与响应式布局
 js/app.js              页面搜索和标签筛选
 js/search-data.js      静态搜索索引
@@ -32,23 +33,25 @@ pages/anecdotes/       轶闻页面
 pages/memories/        往事与《岁月史书》
 pages/info/            关于、联系、帮助和版权页面
 pages/admin.html       管理审核页面
+pages/admin-content.html 在线正文编辑页面
 backup.js              SQLite 一致性备份
 docs/                  开发和部署指南
 docs/releases/         按版本归档的一次性更新说明
+docs/legacy/           历史部署包说明
+materials/             网站原始文本资料
 deploy/confession.service  Linux systemd 单元示例
-README-DEPLOY.txt      交接部署包附带的纯文本说明
-UPDATE-20261018.md     根目录兼容指针，正文已归档到 docs/releases/
-source-text.txt        站点原始素材，不由运行时代码读取
-*.m4a, Screenshot_*.jpg  首页引用的班会录音和图片
+README-DEPLOY.txt      指向归档部署说明的根目录兼容指针
+UPDATE-20261018.md     指向版本更新记录的根目录兼容指针
+materials/source-text.txt  网站原始文本资料，不由运行时代码读取
 data/app.db            运行时数据库（自动生成，不提交）
 config.json            管理口令等运行配置（自动生成，不提交）
 ```
 
 ### 页面目录与 URL 兼容
 
-首页 `index.html` 和旧版入口 `1.5.html` 留在根目录；正文页面按栏目存放在 `pages/` 下。页面间使用相对链接，共用的 CSS、JavaScript 和首页素材继续留在原位置。`server.js` 会把原先的根级页面 URL（例如 `/rules-study.html`）永久跳转到新地址；新代码和书签应使用 `pages/` 下的路径。
+首页 `index.html` 和旧版入口 `1.5.html` 留在根目录；正文与管理页面按栏目存放在 `pages/` 下。共用 CSS 和 JavaScript 留在 `css/`、`js/`，首页图片和录音归档在 `assets/media/`，原始文本存放在 `materials/`。`server.js` 会把原先的根级页面和媒体 URL 永久跳转到新地址；新代码和书签应使用 `pages/`、`assets/media/` 下的路径。
 
-直接用 `file://` 打开首页时，页面链接和搜索仍使用相对路径，不需要启动构建工具。新增页面时放入对应栏目目录，使用 `../` 或 `../../` 指向共用资源，并同步更新首页目录、其他页面导航以及 `js/search-data.js` 中的页面路径。
+直接用 `file://` 打开首页时，页面链接和搜索仍使用相对路径，不需要启动构建工具。新增页面时放入对应栏目目录，使用相对路径指向页面资源；`js/content.js` 使用 `/js/content.js` 以兼容任意页面深度。同步更新首页目录、其他页面导航以及 `js/search-data.js` 中的页面路径。
 
 ## 修改页面和内容
 
@@ -58,9 +61,9 @@ config.json            管理口令等运行配置（自动生成，不提交）
 
 搜索索引位于 `js/search-data.js`。如果加入了新的可搜索内容，要同步维护该索引；搜索需要兼容直接打开 HTML 的方式，因此不要把索引加载改成依赖 `fetch` 的外部文件。
 
-首页的录音和图片用根目录相对路径引用。替换这些素材时沿用当前文件名，或同步修改 `index.html` 中对应的 `src`，并确认新文件确实进入 Git。
+首页图片和录音位于 `assets/media/`。替换素材时沿用原文件名，或同步修改 `index.html` 的 `src`；旧根路径仍会跳转到新地址。
 
-人物册和留言板是动态功能：前端交互在 `js/people.js`，服务端校验、管理权限和数据持久化在 `server.js`。服务端使用 Node 内置 `node:http` 和 `node:sqlite`，数据库文件在 `data/app.db`。新增或调整数据字段时，同时检查 API 输入校验、`pages/admin.html` 展示以及现有数据库的兼容性。
+人物册、留言板和评论是动态功能：前端交互在 `js/people.js`，服务端校验、管理权限和数据持久化在 `server.js`。服务端使用 Node 内置 `node:http` 和 `node:sqlite`，数据库文件在 `data/app.db`。新增或调整数据字段时，同时检查 API 输入校验、`pages/admin.html` 展示以及现有数据库的兼容性。静态正文页可通过 `pages/admin-content.html` 在线编辑，服务端以页面文件名保存覆盖内容和历史版本。原始文本目录不由静态服务器公开。
 
 常用 API：
 
@@ -69,13 +72,15 @@ config.json            管理口令等运行配置（自动生成，不提交）
 | `GET/POST /api/people` | 读取或提交人物词条；开启词条审核后，新词条进入待审核状态 |
 | `DELETE /api/people/:id` | 删除词条或提交删除申请，行为由审核开关决定 |
 | `GET/POST /api/messages` | 读取或提交留言；留言审核开启时，新留言不会立即公开 |
+| `GET/POST /api/people/:id/comments` | 读取或提交指定人物词条的评论；评论审核独立控制 |
 | `GET /api/settings` | 返回公开的审核开关状态，供页面提示使用 |
 | `GET/POST /api/admin/settings` | 读取或调整审核开关 |
 | `GET /api/admin/all` | 读取管理台词条、留言、申请和待处理数量 |
 | `/api/admin/people-review`, `/api/admin/delete-review` | 审核新增词条和删除申请 |
+| `/api/admin/pages`, `/api/admin/content/*` | 在线编辑正文、恢复默认内容和查看/恢复历史版本 |
 | 其他 `/api/admin/*` | 管理员直接新增、下架、恢复、删除或导出数据 |
 
-所有 `/api/admin/*` 请求都需要管理口令。修改 API 时，沿调用链同时核对 `js/people.js`、`server.js` 和 `pages/admin.html`；修改审核流程时，要同时检查 `peopleModerated` 与 `messagesModerated` 两个独立开关。
+所有 `/api/admin/*` 请求都需要管理口令。修改 API 时，沿调用链同时核对 `js/people.js`、`server.js` 和 `pages/admin.html`；修改审核流程时，要分别检查 `peopleModerated`、`messagesModerated` 与 `commentsModerated` 三个开关。
 
 ## 日常开发流程
 

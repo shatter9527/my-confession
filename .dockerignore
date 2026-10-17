@@ -13,5 +13,11 @@ node_modules/
 *.bak
 *.bak-*
 
-# 运行时资源不要排除：index.html 引用了 Screenshot_*.jpg 和 nanchenglu-*.m4a。
+# 页面运行时资源位于 assets/media/；不要在这里排除。
 # 镜像里缺这些文件 → 页面图片空着、音频播放器加载失败（线上已经踩过一次）。
+docs/
+materials/
+deploy/
+README*
+DEPLOY.md
+UPDATE-20261018.md

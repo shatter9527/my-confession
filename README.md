@@ -2,7 +2,7 @@
 
 彰武县高级中学 2022 级一班的班级纪念站，收录班规、往事、轶闻、人物册和《岁月史书》。
 
-这是一个静态 HTML/CSS/JavaScript 网站，附带一个零第三方依赖的 Node.js 服务。静态内容可直接打开 `index.html` 浏览；人物册的实时数据和留言板需要启动服务。
+这是一个静态 HTML/CSS/JavaScript 网站，附带一个零第三方依赖的 Node.js 服务。静态内容可直接打开 `index.html` 浏览；人物册、留言板、评论和在线正文编辑需要启动服务。
 
 ## 快速开始
 
@@ -33,6 +33,7 @@ docker compose up -d --build
 | 轶闻 | `pages/anecdotes/` |
 | 人物册 | `pages/people/` |
 | 岁月史书 | `pages/memories/suishu.html` |
+| 管理台和正文编辑 | `pages/admin.html`、`pages/admin-content.html` |
 | 其他 | `pages/info/` |
 
 ## 维护文档
@@ -41,11 +42,12 @@ docker compose up -d --build
 - [部署指南](docs/DEPLOYMENT.md)：本机、局域网、Docker/NAS、备份和公开访问
 - [服务器更新记录](docs/releases/UPDATE-20261018.md)：2026-10-18 的一次性上线步骤
 - [旧部署文档入口](DEPLOY.md)：保留的兼容链接
+- 旧部署包说明：归档在 `docs/legacy/README-DEPLOY.txt`
 
 ## 数据与安全
 
 访客提交的人物册内容和留言存放在 `data/app.db`。首次启动时，服务会生成管理口令并写入 `config.json`；这两个路径已加入 `.gitignore`，不要提交或公开它们。部署到互联网前，请配置 HTTPS 和强管理口令。
 
-项目没有构建步骤或第三方运行时依赖。HTML 页面和 `css/`、`js/` 资源的路径互相引用，新增页面时请沿用仓库根目录的现有路径布局。
+项目没有构建步骤或第三方运行时依赖。正文页面按栏目放在 `pages/`；共用代码在 `css/`、`js/`，图片和录音在 `assets/media/`。旧页面与素材 URL 会跳转到新位置。
 
 <p align="center"><sub>2022 级一班 · 留个念想</sub></p>

@@ -149,7 +149,7 @@ systemctl status confession
 - [ ] 管理口令足够强，并且你知道它存在哪（`config.json` / Docker 卷内 `/app/data/config.json`）
 - [ ] `config.json`、`data/`、`server.js` 无法通过网址下载（`server.js` 已内置拦截，实测 404）
 - [ ] 走 HTTPS，否则留言和提交内容是明文传输
-- [ ] 想开审核：打开 `/pages/admin.html`，在里面切换「词条审核 / 留言审核」，改完即时生效，不用重启
+- [ ] 想开审核：打开 `/pages/admin.html`，在里面切换「词条审核 / 评论审核 / 留言审核」，改完即时生效，不用重启
 - [ ] 限制 NAS 管理界面、备份目录和 Docker 卷的访问权限
 
 ## Windows 开机自启与定时备份
@@ -188,7 +188,7 @@ powershell -ExecutionPolicy Bypass -File .\打包部署.ps1
 - [ ] 对方 Node 版本 ≥ 22.5（Docker 部署可跳过，镜像内已是 Node 24）
 - [ ] 解压即能 `./start.sh` 跑起来（或容器变成 `healthy`）
 - [ ] 打开站点能看到人物册数据、留言板正常
-- [ ] **视频/图片能正常显示**：`curl -I <站点>/nanchenglu-54-15.m4a` 应为 200
+- [ ] **视频/图片能正常显示**：`curl -I <站点>/assets/media/nanchenglu-54-15.m4a` 应为 200
 - [ ] 改掉默认管理口令，并且知道它在哪（`config.json` / Docker 卷内）
 - [ ] 配好 HTTPS（Cloudflare Tunnel 或 Caddy）
 
