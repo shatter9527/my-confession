@@ -186,6 +186,38 @@
             </table>
         </div>
 
+        <h2 class="sec">正文条目</h2>
+        <div class="card">
+            <div class="form-row">
+                <select id="ep-page"><option value="">— 选择页面 —</option></select>
+                <span class="hint" id="ep-hint">选中页面后可以逐条编辑、隐藏、新增</span>
+            </div>
+            <div class="form-row">
+                <select id="ep-kind" style="flex:0 0 110px">
+                    <option value="entry">普通条目</option>
+                    <option value="quote">语录（岁月史书）</option>
+                </select>
+                <textarea id="ep-body" maxlength="4000" placeholder="新条目内容（纯文字，不用写 HTML）"></textarea>
+            </div>
+            <div class="form-row">
+                <button id="btn-add-entry">添加条目</button>
+            </div>
+        </div>
+        <div class="tbl-wrap">
+            <table class="tbl">
+                <thead><tr><th>ID</th><th>类型</th><th>内容</th><th>留言</th><th>状态</th><th>操作</th></tr></thead>
+                <tbody id="tb-entries"></tbody>
+            </table>
+        </div>
+
+        <h2 class="sec">条目评论</h2>
+        <div class="tbl-wrap">
+            <table class="tbl">
+                <thead><tr><th>ID</th><th>页面 / 条目</th><th>署名</th><th>内容</th><th>状态</th><th>操作</th></tr></thead>
+                <tbody id="tb-ecomments"></tbody>
+            </table>
+        </div>
+
         <h2 class="sec">管理员</h2>
         <div class="card">
             <div class="form-row">
@@ -529,11 +561,158 @@
             renderPeople(r.body.people || []);
             renderAllComments(r.body.comments || []);
             renderMsgs(r.body.messages || []);
+            loadPagesIntoSelect();
+            loadEntries();
+            loadEComments();
             loadTokens();
             loadAudit();
             setStatus('已载入', 'ok');
         }).catch(function () {
             setStatus('连不上服务 —— 先运行 node server.js', 'err');
+        });
+    }
+
+    // ---------- 正文条目
+    var epPage = '';
+
+    function loadPagesIntoSelect() {
+        api('/api/admin/pages').then(function (r) {
+            if (!r.body || !r.body.ok) return;
+            var sel = $('ep-page');
+            if (sel.options.length > 1) return;   // 只填一次
+            r.body.pages.forEach(function (p) {
+                var o = document.createElement('option');
+                o.value = p.page;
+                o.textContent = (p.path || p.page);
+                sel.appendChild(o);
+            });
+        });
+    }
+
+    function renderEntries(data) {
+        var tb = $('tb-entries');
+        tb.textContent = '';
+        var rows = [];
+        (data.entries || []).forEach(function (e) { rows.push({ key: e.eid, kind: e.kind, body: e.body, count: e.count, hidden: e.hidden, isHtml: true }); });
+        (data.extras || []).forEach(function (e) { rows.push({ key: e.key, id: e.id, kind: e.kind, body: e.body, count: e.count, hidden: e.status !== 'published', isHtml: false }); });
+
+        if (!rows.length) {
+            var tr0 = document.createElement('tr');
+            cell(tr0, '这一页没有条目');
+            tb.appendChild(tr0);
+            return;
+        }
+        rows.forEach(function (r) {
+            var tr = document.createElement('tr');
+            if (r.hidden) tr.className = 'dim';
+            cell(tr, r.key);
+            cell(tr, r.kind === 'quote' ? '语录' : '条目');
+            cell(tr, r.body, 'note');
+            cell(tr, r.count || 0);
+            var td = document.createElement('td');
+            td.appendChild(tag(r.hidden ? 'hidden' : 'published'));
+            tr.appendChild(td);
+
+            var ops = document.createElement('td');
+            ops.appendChild(btn('编辑', '', function () {
+                var next = prompt('修改内容：', r.body);
+                if (next === null) return;
+                if (!next.trim()) { setStatus('内容不能空', 'err'); return; }
+                var payload = { body: next.trim(), kind: r.kind };
+                if (r.isHtml) payload.eid = r.key; else payload.id = r.id;
+                if (!r.isHtml) payload.id = r.id;
+                post('/api/admin/entries/' + encodeURIComponent(epPage), payload).then(function (rr) {
+                    if (rr.body && rr.body.ok) { setStatus('已保存', 'ok'); loadEntries(); }
+                    else setStatus((rr.body && rr.body.error) || '保存失败', 'err');
+                });
+            }));
+            if (r.hidden) {
+                ops.appendChild(btn('恢复', 'ok', function () {
+                    var p = r.isHtml ? { eid: r.key } : { id: r.id };
+                    post('/api/admin/entries/' + encodeURIComponent(epPage) + '/restore', p).then(function () { loadEntries(); });
+                }));
+            } else {
+                ops.appendChild(btn('隐藏', 'gray', function () {
+                    var p = r.isHtml ? { eid: r.key } : { id: r.id };
+                    post('/api/admin/entries/' + encodeURIComponent(epPage) + '/hide', p).then(function () { loadEntries(); });
+                }));
+            }
+            if (!r.isHtml) {
+                ops.appendChild(btn('删除', 'warn', function () {
+                    if (!confirm('彻底删除这条？')) return;
+                    post('/api/admin/entries/' + encodeURIComponent(epPage) + '/delete', { id: r.id }).then(function () { loadEntries(); });
+                }));
+            }
+            tr.appendChild(ops);
+            tb.appendChild(tr);
+        });
+    }
+
+    function loadEntries() {
+        if (!epPage) { $('tb-entries').textContent = ''; $('ep-hint').textContent = '选中页面后可以逐条编辑、隐藏、新增'; return; }
+        api('/api/admin/entries/' + encodeURIComponent(epPage)).then(function (r) {
+            if (!r.body || !r.body.ok) { setStatus('读取条目失败', 'err'); return; }
+            $('ep-hint').textContent = '当前页面：' + epPage + '（共 ' + ((r.body.entries || []).length + (r.body.extras || []).length) + ' 条）';
+            renderEntries(r.body);
+        });
+    }
+
+    $('ep-page').addEventListener('change', function () { epPage = this.value; loadEntries(); });
+
+    $('btn-add-entry').addEventListener('click', function () {
+        if (!token) { setStatus('先载入口令', 'err'); return; }
+        if (!epPage) { setStatus('先选一个页面', 'err'); return; }
+        var body = $('ep-body').value.trim();
+        if (!body) { setStatus('内容不能空', 'err'); return; }
+        post('/api/admin/entries/' + encodeURIComponent(epPage), { body: body, kind: $('ep-kind').value }).then(function (r) {
+            if (r.body && r.body.ok) {
+                $('ep-body').value = '';
+                setStatus('已添加条目', 'ok');
+                loadEntries();
+            } else {
+                setStatus((r.body && r.body.error) || '添加失败', 'err');
+            }
+        });
+    });
+
+    // ---------- 条目评论
+    function loadEComments() {
+        api('/api/admin/entry-comments').then(function (r) {
+            if (!r.body || !r.body.ok) return;
+            var tb = $('tb-ecomments');
+            tb.textContent = '';
+            (r.body.items || []).forEach(function (c) {
+                var tr = document.createElement('tr');
+                if (c.status !== 'published') tr.className = 'dim';
+                cell(tr, c.id);
+                cell(tr, c.page + ' #' + c.eid);
+                cell(tr, c.name);
+                cell(tr, c.text, 'note');
+                var td = document.createElement('td');
+                td.appendChild(tag(c.status));
+                tr.appendChild(td);
+                var ops = document.createElement('td');
+                if (c.status !== 'published') {
+                    ops.appendChild(btn('通过', 'ok', function () {
+                        post('/api/admin/entry-comment', { id: c.id, action: 'approve' }).then(function () { loadEComments(); });
+                    }));
+                } else {
+                    ops.appendChild(btn('隐藏', 'gray', function () {
+                        post('/api/admin/entry-comment', { id: c.id, action: 'hide' }).then(function () { loadEComments(); });
+                    }));
+                }
+                ops.appendChild(btn('彻底删除', 'warn', function () {
+                    if (!confirm('彻底删除这条评论？')) return;
+                    post('/api/admin/purge', { id: c.id, type: 'ecomment' }).then(function () { loadEComments(); });
+                }));
+                tr.appendChild(ops);
+                tb.appendChild(tr);
+            });
+            if (!(r.body.items || []).length) {
+                var tr0 = document.createElement('tr');
+                cell(tr0, '还没有条目评论');
+                tb.appendChild(tr0);
+            }
         });
     }
 

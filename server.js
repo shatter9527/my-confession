@@ -191,6 +191,42 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_audit ON audit_log(created_at DESC);
+
+  -- 正文条目：HTML 里的条目按 id 覆盖，额外条目单独存，隐藏按 id 记
+  CREATE TABLE IF NOT EXISTS entry_overrides (
+    page       TEXT NOT NULL,
+    eid        TEXT NOT NULL,
+    body       TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (page, eid)
+  );
+  CREATE TABLE IF NOT EXISTS entry_extras (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    page       TEXT NOT NULL,
+    kind       TEXT NOT NULL DEFAULT 'entry',
+    body       TEXT NOT NULL,
+    sort       INTEGER NOT NULL DEFAULT 0,
+    status     TEXT NOT NULL DEFAULT 'published',
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_extras ON entry_extras(page, status, sort);
+  CREATE TABLE IF NOT EXISTS entry_hidden (
+    page      TEXT NOT NULL,
+    eid       TEXT NOT NULL,
+    hidden_at INTEGER NOT NULL,
+    PRIMARY KEY (page, eid)
+  );
+  CREATE TABLE IF NOT EXISTS entry_comments (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    page       TEXT NOT NULL,
+    eid        TEXT NOT NULL,
+    name       TEXT NOT NULL DEFAULT '匿名',
+    text       TEXT NOT NULL,
+    status     TEXT NOT NULL DEFAULT 'published',
+    created_at INTEGER NOT NULL,
+    from_hash  TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_ecomments ON entry_comments(page, eid, status, created_at DESC);
 `);
 
 const q = {
@@ -277,7 +313,72 @@ const q = {
     `SELECT id,admin_id,admin_name,action,target,detail,created_at
      FROM audit_log ORDER BY id DESC LIMIT 200`),
   trimAudit: db.prepare(`DELETE FROM audit_log WHERE id <= (SELECT MAX(id) FROM audit_log) - 2000`),
+
+  // 正文条目
+  listOverrides: db.prepare(`SELECT eid,body FROM entry_overrides WHERE page=?`),
+  putOverride: db.prepare(
+    `INSERT INTO entry_overrides (page,eid,body,updated_at) VALUES (?,?,?,?)
+     ON CONFLICT(page,eid) DO UPDATE SET body=excluded.body, updated_at=excluded.updated_at`),
+  delOverride: db.prepare(`DELETE FROM entry_overrides WHERE page=? AND eid=?`),
+  listExtras: db.prepare(`SELECT id,kind,body,sort,status FROM entry_extras WHERE page=? ORDER BY sort, id`),
+  insertExtra: db.prepare(
+    `INSERT INTO entry_extras (page,kind,body,sort,status,created_at) VALUES (?,?,?,?,'published',?)`),
+  setExtra: db.prepare(`UPDATE entry_extras SET body=?, kind=? WHERE id=?`),
+  setExtraStatus: db.prepare(`UPDATE entry_extras SET status=? WHERE id=?`),
+  delExtra: db.prepare(`DELETE FROM entry_extras WHERE id=?`),
+  getExtra: db.prepare(`SELECT id,page,kind,body,status FROM entry_extras WHERE id=?`),
+  hiddenOf: db.prepare(`SELECT eid FROM entry_hidden WHERE page=?`),
+  hideEntry: db.prepare(`INSERT INTO entry_hidden (page,eid,hidden_at) VALUES (?,?,?) ON CONFLICT(page,eid) DO NOTHING`),
+  unhideEntry: db.prepare(`DELETE FROM entry_hidden WHERE page=? AND eid=?`),
+
+  // 条目评论
+  listEComments: db.prepare(
+    `SELECT id,name,text,created_at FROM entry_comments
+     WHERE page=? AND eid=? AND status='published' ORDER BY created_at ASC LIMIT 300`),
+  insertEComment: db.prepare(
+    `INSERT INTO entry_comments (page,eid,name,text,status,created_at,from_hash) VALUES (?,?,?,?,?,?,?)`),
+  allEComments: db.prepare(
+    `SELECT id,page,eid,name,text,status,created_at FROM entry_comments ORDER BY id DESC LIMIT 800`),
+  setECommentStatus: db.prepare(`UPDATE entry_comments SET status=? WHERE id=?`),
+  purgeEComment: db.prepare(`DELETE FROM entry_comments WHERE id=?`),
+  countPendingEComments: db.prepare(`SELECT COUNT(*) c FROM entry_comments WHERE status='pending'`),
+  countEComments: db.prepare(`SELECT COUNT(*) c FROM entry_comments WHERE status='published'`),
+  countCommentsByEntry: db.prepare(
+    `SELECT page, eid, COUNT(*) c FROM entry_comments WHERE status='published' GROUP BY page, eid`),
 };
+
+/** 从页面 HTML 里抽出条目：<p class="entry" id="e1">…</p> 与 <p class="quote" id="q1">…<span class="qt">…</span></p> */
+function parseEntries(page) {
+  const rel = PAGE_MAP.get(page);
+  if (!rel) return [];
+  let html;
+  try { html = fs.readFileSync(path.join(ROOT, rel), 'utf8'); } catch { return []; }
+  const out = [];
+  const qre = /<p class="quote[^"]*"[^>]*id="([^"]+)"[^>]*>([\s\S]*?)<\/p>/g;
+  const ere = /<p class="entry[^"]*"[^>]*id="([^"]+)"[^>]*>([\s\S]*?)<\/p>/g;
+  let m;
+  while ((m = qre.exec(html))) {
+    const qt = /<span class="qt">([\s\S]*?)<\/span>/.exec(m[2]);
+    out.push({ eid: m[1], kind: 'quote', body: qt ? qt[1].trim() : m[2].replace(/<[^>]+>/g, '').trim(), at: m.index });
+  }
+  while ((m = ere.exec(html))) {
+    out.push({ eid: m[1], kind: 'entry', body: m[2].trim(), at: m.index });
+  }
+  out.sort((a, b) => a.at - b.at);
+  return out.map(({ eid, kind, body }) => ({ eid, kind, body }));
+}
+
+/** 把「HTML 条目 + 覆盖 + 额外条目 + 隐藏」合成一份前台视图。 */
+function entryView(page) {
+  const base = parseEntries(page);
+  const ov = new Map(q.listOverrides.all(page).map((r) => [r.eid, r.body]));
+  const hidden = new Set(q.hiddenOf.all(page).map((r) => r.eid));
+  const extras = q.listExtras.all(page).filter((e) => e.status === 'published');
+  return {
+    entries: base.map((e) => ({ eid: e.eid, kind: e.kind, body: ov.has(e.eid) ? ov.get(e.eid) : e.body, hidden: hidden.has(e.eid) })),
+    extras: extras.map((e) => ({ key: 'x' + e.id, id: e.id, kind: e.kind, body: e.body })),
+  };
+}
 
 // ---------------------------------------------------------------- 工具
 function clientHash(req) {
@@ -434,6 +535,51 @@ async function api(req, res, pathname) {
   // ---- 公开：当前开关
   if (pathname === '/api/settings' && m === 'GET') {
     return send(res, 200, { ok: true, settings: publicSettings() });
+  }
+
+  // ---- 公开：正文条目
+  let em = pathname.match(/^\/api\/entries\/([\w.-]+)$/);
+  if (em && m === 'GET') {
+    const page = em[1];
+    if (!PAGE_MAP.has(page)) return send(res, 404, { ok: false, error: '不是可编辑页面' });
+    const v = entryView(page);
+    const counts = new Map(
+      q.countCommentsByEntry.all().filter((r) => r.page === page).map((r) => [r.eid, r.c])
+    );
+    return send(res, 200, {
+      ok: true,
+      page,
+      entries: v.entries.filter((e) => !e.hidden).map((e) => ({ ...e, comments: counts.get(e.eid) || 0 })),
+      extras: v.extras.map((e) => ({ ...e, comments: counts.get(e.key) || 0 })),
+    });
+  }
+
+  // ---- 公开：条目评论
+  if (pathname === '/api/entry-comments' && m === 'GET') {
+    const u = new URL(req.url, 'http://x');
+    const page = u.searchParams.get('page') || '';
+    const eid = u.searchParams.get('eid') || '';
+    return send(res, 200, { ok: true, items: q.listEComments.all(page, eid) });
+  }
+  if (pathname === '/api/entry-comments' && m === 'POST') {
+    const limited = rateLimit('ec' + h, 5000, 200);
+    if (limited) return send(res, 429, { ok: false, error: limited });
+    const b = await readBody(req);
+    const page = clip(b.page, 60);
+    const eid = clip(b.eid, 40);
+    const name = clip(b.name, 20) || '\u533f\u540d';
+    const text = clip(b.text, 400);
+    if (!page || !eid) return send(res, 400, { ok: false, error: '缺少条目' });
+    if (!text) return send(res, 400, { ok: false, error: '内容不能空' });
+    const moderated = CONFIG.commentsModerated;
+    const status = moderated ? 'pending' : 'published';
+    const now = Date.now();
+    const r = q.insertEComment.run(page, eid, name, text, status, now, h);
+    return send(res, 200, {
+      ok: true, pending: moderated,
+      message: moderated ? '已提交，等管理员审核后才会显示' : '',
+      item: { id: Number(r.lastInsertRowid), page, eid, name, text, created_at: now },
+    });
   }
 
   // ---- 公开：正文覆盖（没有覆盖时 html 为空串）
@@ -594,7 +740,7 @@ async function api(req, res, pathname) {
           comments: q.countComments.get().c,
           pendingPeople: q.countPendingPeople.get().c,
           pendingRequests: q.countPendingRequests.get().c,
-          pendingComments: q.countPendingComments.get().c,
+          pendingComments: q.countPendingComments.get().c + q.countPendingEComments.get().c,
         },
       });
     }
@@ -770,8 +916,86 @@ async function api(req, res, pathname) {
       const { id, type } = await readBody(req);
       if (type === 'message') q.purgeMsg.run(Number(id));
       else if (type === 'comment') q.purgeComment.run(Number(id));
+      else if (type === 'ecomment') q.purgeEComment.run(Number(id));
       else q.purge.run(Number(id));
       audit(admin, '彻底删除', (type || 'person') + ' #' + id);
+      return send(res, 200, { ok: true });
+    }
+
+    // ---- 正文条目管理
+    let ep2 = pathname.match(/^\/api\/admin\/entries\/([\w.-]+)$/);
+    if (ep2 && m === 'GET') {
+      const page = ep2[1];
+      if (!PAGE_MAP.has(page)) return send(res, 404, { ok: false, error: '不是可编辑页面' });
+      const v = entryView(page);
+      const counts = new Map(q.countCommentsByEntry.all().filter((r) => r.page === page).map((r) => [r.eid, r.c]));
+      return send(res, 200, {
+        ok: true,
+        page,
+        entries: v.entries.map((e) => ({ ...e, count: counts.get(e.eid) || 0 })),
+        extras: q.listExtras.all(page).map((e) => ({ key: 'x' + e.id, id: e.id, kind: e.kind, body: e.body, status: e.status, count: counts.get('x' + e.id) || 0 })),
+      });
+    }
+
+    if (ep2 && m === 'POST') {
+      const page = ep2[1];
+      if (!PAGE_MAP.has(page)) return send(res, 404, { ok: false, error: '不是可编辑页面' });
+      const b = await readBody(req);
+      const body = clip(b.body, 4000);
+      if (!body) return send(res, 400, { ok: false, error: '内容不能空' });
+      const kind = b.kind === 'quote' ? 'quote' : 'entry';
+      if (b.id) {
+        const row = q.getExtra.get(Number(b.id));
+        if (!row || row.page !== page) return send(res, 404, { ok: false, error: '没有这条' });
+        q.setExtra.run(body, kind, Number(b.id));
+        audit(admin, '编辑正文条目', page + '#x' + b.id);
+        return send(res, 200, { ok: true, id: Number(b.id), key: 'x' + Number(b.id) });
+      }
+      if (b.eid) {
+        q.putOverride.run(page, clip(b.eid, 40), body, Date.now());
+        audit(admin, '编辑正文条目', page + '#' + b.eid);
+        return send(res, 200, { ok: true, eid: b.eid });
+      }
+      const sort = Number(b.sort) || Date.now();
+      const r = q.insertExtra.run(page, kind, body, sort, Date.now());
+      audit(admin, '新增正文条目', page, kind);
+      return send(res, 200, { ok: true, id: Number(r.lastInsertRowid), key: 'x' + Number(r.lastInsertRowid) });
+    }
+
+    let eq = pathname.match(/^\/api\/admin\/entries\/([\w.-]+)\/(hide|restore|delete)$/);
+    if (eq && m === 'POST') {
+      const page = eq[1];
+      const op = eq[2];
+      if (!PAGE_MAP.has(page)) return send(res, 404, { ok: false, error: '不是可编辑页面' });
+      const b = await readBody(req);
+      if (b.id) {
+        const row = q.getExtra.get(Number(b.id));
+        if (!row || row.page !== page) return send(res, 404, { ok: false, error: '没有这条' });
+        if (op === 'delete') { q.delExtra.run(Number(b.id)); audit(admin, '删除正文条目', page + '#x' + b.id); return send(res, 200, { ok: true }); }
+        q.setExtraStatus.run(op === 'hide' ? 'hidden' : 'published', Number(b.id));
+        audit(admin, op === 'hide' ? '隐藏正文条目' : '恢复正文条目', page + '#x' + b.id);
+        return send(res, 200, { ok: true });
+      }
+      if (!b.eid) return send(res, 400, { ok: false, error: '缺少条目 id' });
+      if (op === 'hide') q.hideEntry.run(page, String(b.eid), Date.now());
+      else if (op === 'restore') q.unhideEntry.run(page, String(b.eid));
+      else return send(res, 400, { ok: false, error: 'HTML 里的条目只能隐藏，不能物理删除' });
+      audit(admin, op === 'hide' ? '隐藏正文条目' : '恢复正文条目', page + '#' + b.eid);
+      return send(res, 200, { ok: true });
+    }
+
+    if (pathname === '/api/admin/entry-comments' && m === 'GET') {
+      return send(res, 200, { ok: true, items: q.allEComments.all() });
+    }
+    if (pathname === '/api/admin/entry-comment' && m === 'POST') {
+      const b = await readBody(req);
+      const id = Number(b.id);
+      const action = String(b.action || '');
+      const NEXT = { approve: 'published', reject: 'rejected', hide: 'deleted' };
+      const LABEL = { approve: '通过条目评论', reject: '驳回条目评论', hide: '隐藏条目评论' };
+      if (!NEXT[action]) return send(res, 400, { ok: false, error: 'action 只能是 approve / reject / hide' });
+      q.setECommentStatus.run(NEXT[action], id);
+      audit(admin, LABEL[action], '#' + id);
       return send(res, 200, { ok: true });
     }
 
