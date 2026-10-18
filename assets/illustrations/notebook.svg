@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 340" fill="none">
+  <title>打开的笔记本与铅笔</title>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="m57 84 146-13 178 45-18 162-159-43-150 11Z" fill="#ebe4cf" stroke="#706e5d" stroke-width="2"/>
+    <path d="m65 70 142-12 172 42-18 162-158-42-146 11Z" fill="#f8f7f2" stroke="#706e5d" stroke-width="2"/>
+    <path d="m207 58-4 162M67 77l-7 145 141-9M215 66l-5 148 144 40" stroke="#b6b3a3"/>
+    <path d="m89 106 84-7m-86 24 86-8m-85 25 68-6m-70 23 85-8m-83 25 76-6m156-40 59 15m-61 2 58 16m-60 2 70 18m-71-1 52 14" stroke="#aaa99a" stroke-width="2"/>
+    <path d="m250 98 6 39m-16-25 31 6m-22-23 20 9m-22 20 21 3" stroke="#ab5040" stroke-width="2"/>
+    <path d="m168 264 125 27 4-13-126-28-19 3Z" fill="#d2a645" stroke="#776548" stroke-width="1.5"/>
+    <path d="m168 264 3-14m-19 3 17 5m3-4 120 27" stroke="#776548" stroke-width="1.5"/>
+    <path d="m72 278 14 8 19-18M309 64l8-17m6 25 15-7m-30-8-2-15" stroke="#758457" stroke-width="2"/>
+  </g>
+</svg>

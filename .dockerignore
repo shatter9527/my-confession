@@ -6,6 +6,11 @@ compose.yaml
 config.json
 data/
 node_modules/
+tests/
+scripts/
+test-results/
+playwright-report/
+playwright.config.cjs
 *.db
 *.db-shm
 *.db-wal

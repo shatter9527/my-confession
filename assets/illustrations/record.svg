@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320">
+  <title>一张唱片</title>
+  <circle cx="160" cy="160" r="142" fill="#343e32"/>
+  <g fill="none" stroke="#8c977b" stroke-width="1" opacity=".55">
+    <circle cx="160" cy="160" r="132"/><circle cx="160" cy="160" r="122"/><circle cx="160" cy="160" r="112"/><circle cx="160" cy="160" r="102"/><circle cx="160" cy="160" r="92"/><circle cx="160" cy="160" r="82"/>
+    <path d="M59 122a109 109 0 0 1 87-71m-80 76a102 102 0 0 1 82-68m116 143a109 109 0 0 1-86 65m78-69a101 101 0 0 1-79 61" stroke="#d2d3af" stroke-width="3"/>
+  </g>
+  <circle cx="160" cy="160" r="62" fill="#b85c47"/>
+  <circle cx="160" cy="160" r="53" fill="none" stroke="#e6b39a"/>
+  <text x="160" y="144" text-anchor="middle" fill="#fff4d7" font-family="Georgia,serif" font-size="16">CLASS ONE</text>
+  <text x="160" y="185" text-anchor="middle" fill="#fff4d7" font-family="monospace" font-size="10">SIDE A · 2022</text>
+  <circle cx="160" cy="160" r="7" fill="#f8f7f2"/>
+</svg>

@@ -352,7 +352,10 @@ function parseEntries(page) {
   const rel = PAGE_MAP.get(page);
   if (!rel) return [];
   let html;
-  try { html = fs.readFileSync(path.join(ROOT, rel), 'utf8'); } catch { return []; }
+  // A saved page body is the base for per-entry edits and comments too.
+  // Otherwise the entry client would replace an online edit with the source file.
+  const saved = q.getContent.get(page);
+  try { html = saved && saved.html ? saved.html : fs.readFileSync(path.join(ROOT, rel), 'utf8'); } catch { return []; }
   const out = [];
   const qre = /<p class="quote[^"]*"[^>]*id="([^"]+)"[^>]*>([\s\S]*?)<\/p>/g;
   const ere = /<p class="entry[^"]*"[^>]*id="([^"]+)"[^>]*>([\s\S]*?)<\/p>/g;
@@ -475,7 +478,7 @@ const MIME = {
   '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
   '.txt': 'text/plain; charset=utf-8',
 };
-const DENY = [/^\/data\//i, /^\/materials\//i, /^\/config\.json$/i, /^\/server\.js$/i, /^\/\./, /\.bak/i, /\.bak-\d/i];
+const DENY = [/^\/data\//i, /^\/materials\//i, /^\/(?:tests|scripts|node_modules|test-results|playwright-report)\//i, /^\/config\.json$/i, /^\/server\.js$/i, /^\/\./, /\.bak/i, /\.bak-\d/i];
 
 const LEGACY_STATIC_REDIRECTS = {
   '/Screenshot_2025-05-14-10-20-03-636_com.tencent.mm-edit.jpg': '/assets/media/Screenshot_2025-05-14-10-20-03-636_com.tencent.mm-edit.jpg',
@@ -512,18 +515,49 @@ const LEGACY_STATIC_REDIRECTS = {
 };
 
 function serveStatic(req, res, pathname) {
-  let rel = decodeURIComponent(pathname);
+  let rel;
+  try { rel = decodeURIComponent(pathname); } catch { return send(res, 400, 'Bad Request'); }
   if (rel === '/') rel = '/index.html';
   if (DENY.some((re) => re.test(rel))) return send(res, 404, 'Not Found');
   const file = path.normalize(path.join(ROOT, rel));
-  if (!file.startsWith(ROOT)) return send(res, 403, 'Forbidden');
+  if (!file.startsWith(ROOT + path.sep)) return send(res, 403, 'Forbidden');
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) return send(res, 404, 'Not Found');
-    res.writeHead(200, {
+    const headers = {
       'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream',
       'Content-Length': st.size,
-    });
-    fs.createReadStream(file).pipe(res);
+      'Accept-Ranges': 'bytes',
+    };
+    let start = 0;
+    let end = st.size - 1;
+    let status = 200;
+    // Native audio controls request byte ranges when seeking through long recordings.
+    const range = req.headers.range;
+    if (range) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+      if (!match || (!match[1] && !match[2])) {
+        res.writeHead(416, { 'Content-Range': 'bytes */' + st.size });
+        return res.end();
+      }
+      if (!match[1]) start = Math.max(0, st.size - Number(match[2]));
+      else {
+        start = Number(match[1]);
+        if (match[2]) end = Math.min(Number(match[2]), end);
+      }
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= st.size) {
+        res.writeHead(416, { 'Content-Range': 'bytes */' + st.size });
+        return res.end();
+      }
+      status = 206;
+      headers['Content-Range'] = 'bytes ' + start + '-' + end + '/' + st.size;
+      headers['Content-Length'] = end - start + 1;
+    }
+    res.writeHead(status, headers);
+    if (req.method === 'HEAD' || st.size === 0) return res.end();
+    const stream = fs.createReadStream(file, { start, end });
+    stream.on('error', () => res.destroy());
+    res.on('close', () => stream.destroy());
+    stream.pipe(res);
   });
 }
 

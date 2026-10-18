@@ -4,57 +4,28 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>正文编辑 · My Confession</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%23207cca'/%3E%3Ctext x='50' y='70' font-size='56' text-anchor='middle' fill='%23ffffff' font-family='Georgia,serif'%3EE%3C/text%3E%3C/svg%3E">
-    <style>
-        html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; background: #eef2f6; }
-        .bar {
-            position: sticky; top: 0; z-index: 10; background: #fff; border-bottom: 1px solid #dfe4ea;
-            padding: 10px 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
-        }
-        .bar h1 { font-size: 16px; margin: 0 8px 0 0; color: #2c3e50; }
-        .bar input[type=password] { flex: 1 1 260px; padding: 8px 10px; border: 1px solid #dfe4ea; border-radius: 6px; font-size: 13px; }
-        .bar select { padding: 8px 10px; border: 1px solid #dfe4ea; border-radius: 6px; font-size: 13px; min-width: 200px; }
-        .bar button {
-            padding: 8px 14px; border: none; border-radius: 6px; background: #3498db; color: #fff;
-            font-size: 13px; cursor: pointer;
-        }
-        .bar button:hover { background: #2980b9; }
-        .bar button.gray { background: #7f8c8d; }
-        .bar button.gray:hover { background: #626f70; }
-        .bar button.warn { background: #c0392b; }
-        .bar button.warn:hover { background: #962d22; }
-        .bar a { color: #3498db; text-decoration: none; font-size: 13px; margin-left: auto; }
-        .msg { padding: 6px 16px; font-size: 13px; color: #777; background: #f8f9fa; border-bottom: 1px solid #eef1f4; }
-        .msg.ok { color: #27ae60; }
-        .msg.err { color: #c0392b; }
-        iframe { width: 100%; height: calc(100vh - 108px); border: 0; background: #fff; display: block; }
-        .hidden { display: none !important; }
-        #history {
-            position: absolute; right: 16px; top: 58px; z-index: 20; background: #fff;
-            border: 1px solid #dfe4ea; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.12);
-            padding: 10px; min-width: 260px; max-height: 50vh; overflow: auto; font-size: 13px;
-        }
-        #history div { padding: 6px 8px; border-radius: 5px; cursor: pointer; display: flex; justify-content: space-between; gap: 12px; }
-        #history div:hover { background: #f4f8fd; }
-        #history .t { color: #7f8c8d; }
-    </style>
-</head>
-<body>
+    <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 
-<div class="bar">
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="../css/admin.css">
+    <script src="../js/site.js" defer></script>
+</head>
+<body class="editor-page">
+
+<div class="bar editor-bar">
     <h1>✎ 正文编辑</h1>
-    <input type="password" id="token" placeholder="管理口令" autocomplete="off">
+    <input type="password" id="token" placeholder="管理口令" autocomplete="off" aria-label="管理口令">
     <button id="btn-token">载入</button>
-    <select id="page"><option value="">— 选择页面 —</option></select>
+    <select aria-label="选择编辑页面" id="page"><option value="">— 选择页面 —</option></select>
     <button id="btn-save">保存</button>
     <button id="btn-reset" class="warn">恢复默认</button>
     <button id="btn-history" class="gray">历史版本</button>
     <button id="btn-reload" class="gray">重新载入</button>
     <a href="admin.html">← 回审核台</a>
 </div>
-<div class="msg" id="msg">先粘贴管理口令，再选一个页面。</div>
+<div class="msg" id="msg" role="status">先粘贴管理口令，再选一个页面。</div>
 <div id="history" class="hidden"></div>
-<iframe id="frame" src="about:blank" title="editor"></iframe>
+<iframe id="frame" src="about:blank" title="正文编辑预览"></iframe>
 
 <script>
 (function () {
@@ -123,7 +94,7 @@
         }, true);
 
         box.setAttribute('contenteditable', 'true');
-        box.style.outline = '2px dashed #9ecbf0';
+        box.style.outline = '2px dashed var(--accent)';
         box.style.outlineOffset = '6px';
         box.title = '这一整块可以直接编辑';
 
@@ -139,8 +110,8 @@
 
     $('frame').addEventListener('load', function () {
         if (!current) { return; }
-        // content.js 会异步套用覆盖内容，等它落定再开放编辑
-        setTimeout(enableEditing, 600);
+        // Wait for the actual override request, even on a slow connection.
+        Promise.resolve($('frame').contentWindow.MFContentReady).then(enableEditing);
     });
 
     $('btn-token').addEventListener('click', function () {
@@ -162,7 +133,9 @@
         var fr = $('frame');
         var box = fr.contentDocument && fr.contentDocument.querySelector('.content-left');
         if (!box) { setMsg('拿不到正文内容', 'err'); return; }
-        var html = box.innerHTML;
+        var clean = box.cloneNode(true);
+        clean.querySelectorAll('.cmt-bar, .cmt-box').forEach(function (node) { node.remove(); });
+        var html = clean.innerHTML;
         if (!confirm('保存后，所有访客看到的「' + current + '」正文都会变成现在这样。\n旧版本会自动存进历史，可以随时恢复。\n\n确定保存？')) { return; }
         post('/api/admin/content/' + encodeURIComponent(current), { html: html }).then(function (r) {
             if (r.body && r.body.ok) { setMsg('已保存（' + current + '）', 'ok'); }
@@ -198,7 +171,7 @@
                 t.textContent = new Date(h.saved_at).toLocaleString();
                 var b = document.createElement('span');
                 b.textContent = '恢复这版';
-                b.style.color = '#3498db';
+                b.style.color = 'var(--accent)';
                 d.appendChild(t); d.appendChild(b);
                 d.addEventListener('click', function () {
                     if (!confirm('恢复到这个时间点的版本？当前内容会先进历史。')) return;

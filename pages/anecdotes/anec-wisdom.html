@@ -1,30 +1,45 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" id="top">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>集体智慧 · My Confession</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%23207cca'/%3E%3Ctext x='50' y='70' font-size='56' text-anchor='middle' fill='%23ffffff' font-family='Georgia,serif'%3EM%3C/text%3E%3C/svg%3E">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="../../css/style.css">
+    <script src="../../js/content.js" defer></script>
+    <script src="../../js/site.js" defer></script>
+    <script src="../../js/search-data.js" defer></script>
+    <script src="../../js/app.js" defer></script>
+    <script src="../../js/entries.js" defer></script>
 </head>
-<body>
-    <header>
-        <div class="container">
-            <div class="logo-search">
-                <a href="../../index.html" class="logo" style="text-decoration: none;">
-                    <i class="fas fa-book-open"></i>
-                    My Confession
-                </a>
-                <div class="search-box">
-                    <input type="search" placeholder="请输入搜索关键词..." autocomplete="off" spellcheck="false">
-                    <button><i class="fas fa-search"></i> 搜索</button>
+<body class="reading-page">
+    <a class="skip-link" href="#main">跳至正文</a>
+    <header class="site-header">
+        <div class="container site-bar">
+            <a href="../../index.html" class="logo"><img src="../../assets/favicon.svg" width="29" height="29" alt="">my confession<span class="sr-only"> · 一班纪念册</span></a>
+            <nav class="site-nav" id="site-nav" aria-label="主导航">
+                <a href="../../index.html#chapters">翻开目录</a>
+                <a href="../../index.html#voices">旧日声音</a>
+                <a href="../../index.html#guestbook">留一句话</a>
+            </nav>
+            <div class="site-tools">
+                <button class="icon-button search-toggle" type="button" aria-label="搜索全站" aria-expanded="false" aria-controls="site-search" title="搜索全站 /"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></button>
+                <button class="icon-button theme-toggle" type="button" aria-label="切换夜间模式" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.3 14.5A8 8 0 0 1 9.5 4.7a8.2 8.2 0 1 0 9.8 9.8Z"/></svg></button>
+                <button class="icon-button menu-toggle" type="button" aria-label="展开导航" aria-expanded="false" aria-controls="site-nav"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+            </div>
+        </div>
+        <div class="search-drawer" id="site-search">
+            <div class="container">
+                <div class="search-box" role="search">
+                    <label for="site-search-input" class="sr-only">搜索人物、班规和往事</label>
+                    <input id="site-search-input" type="search" placeholder="找个人，或找一段往事…" autocomplete="off" spellcheck="false">
+                    <button type="button">搜索</button>
                 </div>
             </div>
         </div>
     </header>
 
-    <div class="container">
+    <main class="container" id="main">
         <div class="breadcrumb">
             <a href="../../index.html"><i class="fas fa-house"></i> 目录</a>
             <span>/</span>
@@ -93,27 +108,26 @@
             <a href="../../index.html" class="center"><i class="fas fa-table-list"></i> 返回目录</a>
             <a href="anec-custom.html">约定俗成 <i class="fas fa-chevron-right"></i></a>
         </div>
-    </div>
+    </main>
 
-    <footer>
-        <div class="footer-content">
-            <p>欢迎联系，一同丰富这段回忆</p>
-            <div class="footer-links">
-                <a href="../info/about.html">关于我</a>
-                <a href="../info/copyright.html">版权声明</a>
-                <a href="../info/contact.html">联系方式</a>
-                <a href="../info/help.html">帮助中心</a>
+    <footer class="site-footer">
+        <div class="container">
+            <div class="footer-top">
+                <p class="footer-title">故事未完。<br><span>我们慢慢补。</span></p>
+                <nav class="footer-links" aria-label="网站信息">
+                    <a href="../../pages/info/about.html">关于我</a>
+                    <a href="../../pages/info/copyright.html">版权声明</a>
+                    <a href="../../pages/info/contact.html">联系方式</a>
+                    <a href="../../pages/info/help.html">帮助中心</a>
+                </nav>
             </div>
-            <div class="copyright">
-                网页由赵智博一人制作
+            <div class="footer-bottom">
+                <span>彰武县高级中学 · 2022 级一班</span>
+                <span>网页由赵智博制作 · 花园绘图 <a href="https://github.com/appautomaton/delineate" target="_blank" rel="noopener noreferrer">Delineate ↗</a></span>
+                <a href="#top">回到页首 ↑</a>
             </div>
         </div>
     </footer>
-
-    <script src="../../js/search-data.js"></script>
-    <script src="../../js/app.js"></script>
-
-    <script src="/js/content.js"></script>
-    <script src="/js/entries.js"></script>
+    <button class="back-to-top" type="button" aria-label="回到页首" hidden>↑</button>
 </body>
 </html>

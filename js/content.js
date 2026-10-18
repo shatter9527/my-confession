@@ -12,8 +12,8 @@
 
     function apply() {
         var box = document.querySelector('.content-left');
-        if (!box) { return; }
-        fetch('/api/content/' + encodeURIComponent(pageKey()), { cache: 'no-store' })
+        if (!box || location.protocol === 'file:' || /^people-/.test(pageKey())) { return Promise.resolve(); }
+        return fetch('/api/content/' + encodeURIComponent(pageKey()), { cache: 'no-store' })
             .then(function (r) { return r.json(); })
             .then(function (j) {
                 if (j && j.ok && typeof j.html === 'string' && j.html !== '') {
@@ -24,9 +24,10 @@
             .catch(function () { /* 离线或直开文件时静默 */ });
     }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', apply);
-    } else {
-        apply();
-    }
+    // Entry comments and page interactions must attach after an edited body is in place.
+    window.MFContentReady = document.readyState === 'loading'
+        ? new Promise(function (resolve) {
+            document.addEventListener('DOMContentLoaded', function () { resolve(apply()); }, { once: true });
+        })
+        : apply();
 })();

@@ -42,10 +42,13 @@
         var nameIn = document.createElement('input');
         nameIn.type = 'text';
         nameIn.placeholder = '署名（可留空）';
+        nameIn.setAttribute('aria-label', '留言署名（可留空）');
         nameIn.maxLength = 20;
 
         var textIn = document.createElement('textarea');
         textIn.placeholder = '说点什么…';
+        textIn.setAttribute('aria-label', '留言内容');
+        textIn.required = true;
         textIn.maxLength = 400;
         textIn.rows = 2;
 
@@ -54,6 +57,7 @@
         sendBtn.textContent = '发送';
 
         var tip = el('span', 'cmt-tip');
+        tip.setAttribute('role', 'status');
 
         var row = el('div', 'cmt-form-row');
         row.appendChild(nameIn);
@@ -70,6 +74,7 @@
 
         function label() {
             toggle.textContent = (count > 0 ? '留言 ' + count : '写留言') + (open ? ' ▲' : ' ▼');
+            toggle.setAttribute('aria-expanded', String(open));
         }
 
         function renderList(items) {
@@ -236,12 +241,12 @@
                     }
                 }).catch(function () {
                     btn.disabled = false;
-                    if (tip) { tip.textContent = '连不上服务 —— 需要先运行 node server.js'; tip.className = 'people-tip err'; }
+                    if (tip) { tip.textContent = '暂时无法连接，请稍后再试。'; tip.className = 'people-tip err'; }
                 });
             });
         }
 
-        load();
+        if (location.protocol !== 'file:') load();
     }
 
     /* ---------------- 留言板 ---------------- */
@@ -273,7 +278,7 @@
                 render((r.body && r.body.items) || []);
             }).catch(function () {
                 box.textContent = '';
-                box.appendChild(el('p', 'msg-empty', '连不上服务 —— 需要先运行 node server.js'));
+                box.appendChild(el('p', 'msg-empty', '暂时无法读取留言，请稍后再试。'));
             });
         }
 
@@ -310,10 +315,12 @@
             });
         }
 
-        load();
+        if (location.protocol === 'file:') {
+            box.textContent = '通过网站服务访问时，就能在这里阅读和留下留言。';
+        } else load();
     }
 
-    function boot() { initPeople(); initMsg(); }
+    function boot() { Promise.resolve(window.MFContentReady).then(function () { initPeople(); initMsg(); }); }
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', boot);

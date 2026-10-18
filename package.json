@@ -1,0 +1,14 @@
+{
+  "name": "my-confession",
+  "version": "2.0.0",
+  "private": true,
+  "description": "2022 级一班纪念站，无构建步骤或第三方运行时依赖。",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node scripts/check.cjs",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui"
+  },
+  "engines": { "node": ">=22.5" },
+  "devDependencies": { "@playwright/test": "1.61.1" }
+}

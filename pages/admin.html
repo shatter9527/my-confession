@@ -4,90 +4,35 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>审核台 · My Confession</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%23207cca'/%3E%3Ctext x='50' y='70' font-size='56' text-anchor='middle' fill='%23ffffff' font-family='Georgia,serif'%3EA%3C/text%3E%3C/svg%3E">
+    <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="../css/style.css">
-    <style>
-        .admin-wrap { max-width: 980px; margin: 0 auto; padding: 30px 20px 60px; }
-        .admin-head { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; flex-wrap: wrap; }
-        .admin-head h1 { font-size: 24px; color: #2c3e50; }
-        .admin-head nav { margin-left: auto; display: flex; gap: 14px; font-size: 14px; }
-        .admin-head nav a { color: #3498db; text-decoration: none; }
-        .admin-note { color: #7f8c8d; font-size: 14px; margin-bottom: 22px; }
-        .admin-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
-        .admin-bar input { flex: 1 1 320px; padding: 10px 12px; border: 1px solid #dfe4ea; border-radius: 6px; font-size: 14px; font-family: inherit; }
-        .admin-bar button, .tbl button, .form-row button, .sw button { padding: 9px 16px; border: none; border-radius: 6px; background: #3498db; color: #fff; font-size: 14px; cursor: pointer; }
-        .admin-bar button:hover, .form-row button:hover { background: #2980b9; }
-        .admin-bar button.ghost { background: #2c3e50; }
-        .admin-bar button.ghost:hover { background: #1a252f; }
-        .stat { display: flex; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
-        .stat div { background: #f8f9fa; border-left: 3px solid #3498db; border-radius: 6px; padding: 12px 18px; font-size: 14px; color: #555; }
-        .stat div.alert { border-left-color: #e67e22; background: #fef6ec; }
-        .stat b { color: #2c3e50; font-size: 20px; margin-right: 6px; }
-        h2.sec { font-size: 18px; color: #2c3e50; margin: 30px 0 12px; padding-left: 12px; border-left: 4px solid #3498db; }
-        .tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
-        .tbl th, .tbl td { text-align: left; padding: 9px 10px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
-        .tbl th { color: #7f8c8d; font-weight: normal; font-size: 13px; }
-        .tbl td.note { color: #555; max-width: 320px; }
-        .tbl tr.dim td { opacity: .55; }
-        .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; white-space: nowrap; }
-        .tag.on { background: #e8f6ee; color: #27ae60; }
-        .tag.off { background: #fdeaea; color: #c0392b; }
-        .tag.wait { background: #fef6ec; color: #b9770e; }
-        .tag.hide { background: #eef1f7; color: #5a6b8c; }
-        .tbl button { padding: 4px 10px; font-size: 12px; margin: 0 6px 6px 0; }
-        .tbl button.warn { background: #c0392b; }
-        .tbl button.warn:hover { background: #962d22; }
-        .tbl button.ok { background: #27ae60; }
-        .tbl button.ok:hover { background: #1e8449; }
-        .tbl button.gray { background: #7f8c8d; }
-        .tbl button.gray:hover { background: #626f70; }
-        .hide { display: none !important; }
-        .msg-line { color: #777; font-size: 14px; margin-top: 10px; }
 
-        .card { background: #f8f9fa; border-radius: 8px; padding: 16px 18px; margin-bottom: 10px; }
-        .sw { display: flex; align-items: center; gap: 12px; padding: 8px 0; flex-wrap: wrap; }
-        .sw label { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #2c3e50; cursor: pointer; }
-        .sw input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; }
-        .sw .hint { color: #7f8c8d; font-size: 13px; }
-        .form-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-        .form-row input, .form-row select, .form-row textarea {
-            padding: 9px 11px; border: 1px solid #dfe4ea; border-radius: 6px; font-size: 14px;
-            font-family: inherit; background: #fff;
-        }
-        .form-row input { flex: 1 1 160px; }
-        .form-row select { flex: 0 0 120px; }
-        .form-row textarea { flex: 1 1 100%; min-height: 64px; resize: vertical; }
-
-        .edit-row td { background: #f4f8fd; }
-        .edit-row input, .edit-row select, .edit-row textarea {
-            width: 100%; padding: 6px 8px; border: 1px solid #dfe4ea; border-radius: 4px;
-            font-size: 13px; font-family: inherit; box-sizing: border-box;
-        }
-        .edit-row textarea { min-height: 56px; resize: vertical; }
-    </style>
+    <link rel="stylesheet" href="../css/admin.css">
+    <script src="../js/site.js" defer></script>
 </head>
 <body>
 
-<div class="admin-wrap">
+<main class="admin-wrap" id="main">
     <div class="admin-head">
         <h1><i class="fas fa-shield-halved" style="color:#3498db"></i> 审核台</h1>
         <nav>
             <a href="admin-content.html">✎ 正文编辑</a>
             <a href="../index.html">← 回到站点</a>
+            <button class="icon-button theme-toggle" type="button" aria-label="切换夜间模式" aria-pressed="false">◐</button>
         </nav>
     </div>
     <p class="admin-note">
         三个开关分别管「词条」「留言板」「词条下的评论」。开审核后访客的提交变成待审批请求，你点头才生效。
-        口令存在 <code>config.json</code> 的 <code>adminToken</code>。
+        可使用管理员分配给你的独立口令登录。
     </p>
 
     <div class="admin-bar">
-        <input type="password" id="token" placeholder="粘贴管理口令（adminToken）" autocomplete="off">
+        <input type="password" id="token" placeholder="粘贴管理口令" autocomplete="off" aria-label="粘贴管理口令">
         <button id="btn-load">载入</button>
         <button id="btn-snapshot" class="ghost" title="把已发布人物导出成 data/people.json">导出静态快照</button>
         <button id="btn-forget" class="ghost">清除本机口令</button>
     </div>
-    <div class="msg-line" id="status"></div>
+    <div class="msg-line" id="status" role="status"></div>
 
     <div id="panel" class="hide">
         <h2 class="sec">审核开关</h2>
@@ -120,33 +65,33 @@
 
         <div id="block-pending-people" class="hide">
             <h2 class="sec">待审核 · 访客新增的词条</h2>
-            <table class="tbl">
+            <div class="tbl-wrap" tabindex="0" role="region" aria-label="审核列表"><table class="tbl">
                 <thead><tr><th>ID</th><th>分类</th><th>名字</th><th>描述</th><th>操作</th></tr></thead>
                 <tbody id="tb-pending-people"></tbody>
-            </table>
+            </table></div>
         </div>
 
         <div id="block-pending-req" class="hide">
             <h2 class="sec">待审核 · 访客申请的删除</h2>
-            <table class="tbl">
+            <div class="tbl-wrap" tabindex="0" role="region" aria-label="审核列表"><table class="tbl">
                 <thead><tr><th>ID</th><th>目标词条</th><th>分类</th><th>备注</th><th>操作</th></tr></thead>
                 <tbody id="tb-pending-req"></tbody>
-            </table>
+            </table></div>
         </div>
 
         <div id="block-pending-cmt" class="hide">
             <h2 class="sec">待审核 · 词条评论</h2>
-            <table class="tbl">
+            <div class="tbl-wrap" tabindex="0" role="region" aria-label="审核列表"><table class="tbl">
                 <thead><tr><th>ID</th><th>词条</th><th>署名</th><th>内容</th><th>操作</th></tr></thead>
                 <tbody id="tb-pending-cmt"></tbody>
-            </table>
+            </table></div>
         </div>
 
         <h2 class="sec">新增词条（管理员，直接上架）</h2>
         <div class="card">
             <div class="form-row">
-                <input id="np-name" maxlength="40" placeholder="名字">
-                <select id="np-category">
+                <input id="np-name" maxlength="40" placeholder="名字" aria-label="名字">
+                <select aria-label="人物分类" id="np-category">
                     <option>正常人</option>
                     <option>神人</option>
                     <option>全唐</option>
@@ -155,7 +100,7 @@
                 </select>
             </div>
             <div class="form-row">
-                <textarea id="np-note" maxlength="1200" placeholder="描述（最多 1200 字）"></textarea>
+                <textarea id="np-note" maxlength="1200" placeholder="描述（最多 1200 字）" aria-label="描述（最多 1200 字）"></textarea>
             </div>
             <div class="form-row">
                 <button id="btn-add-person">添加并上架</button>
@@ -163,7 +108,7 @@
         </div>
 
         <h2 class="sec">人物册</h2>
-        <div class="tbl-wrap">
+        <div class="tbl-wrap" tabindex="0" role="region" aria-label="管理列表">
             <table class="tbl">
                 <thead><tr><th>ID</th><th>分类</th><th>名字</th><th>描述</th><th>状态</th><th>操作</th></tr></thead>
                 <tbody id="tb-people"></tbody>
@@ -171,7 +116,7 @@
         </div>
 
         <h2 class="sec">全部评论</h2>
-        <div class="tbl-wrap">
+        <div class="tbl-wrap" tabindex="0" role="region" aria-label="管理列表">
             <table class="tbl">
                 <thead><tr><th>ID</th><th>词条</th><th>署名</th><th>内容</th><th>状态</th><th>操作</th></tr></thead>
                 <tbody id="tb-cmt"></tbody>
@@ -179,7 +124,7 @@
         </div>
 
         <h2 class="sec">留言板</h2>
-        <div class="tbl-wrap">
+        <div class="tbl-wrap" tabindex="0" role="region" aria-label="管理列表">
             <table class="tbl">
                 <thead><tr><th>ID</th><th>署名</th><th>内容</th><th>状态</th><th>操作</th></tr></thead>
                 <tbody id="tb-msg"></tbody>
@@ -189,21 +134,21 @@
         <h2 class="sec">正文条目</h2>
         <div class="card">
             <div class="form-row">
-                <select id="ep-page"><option value="">— 选择页面 —</option></select>
+                <select aria-label="条目所属页面" id="ep-page"><option value="">— 选择页面 —</option></select>
                 <span class="hint" id="ep-hint">选中页面后可以逐条编辑、隐藏、新增</span>
             </div>
             <div class="form-row">
-                <select id="ep-kind" style="flex:0 0 110px">
+                <select aria-label="条目类型" id="ep-kind" style="flex:0 0 110px">
                     <option value="entry">普通条目</option>
                     <option value="quote">语录（岁月史书）</option>
                 </select>
-                <textarea id="ep-body" maxlength="4000" placeholder="新条目内容（纯文字，不用写 HTML）"></textarea>
+                <textarea id="ep-body" maxlength="4000" placeholder="新条目内容（纯文字，不用写 HTML）" aria-label="新条目内容（纯文字，不用写 HTML）"></textarea>
             </div>
             <div class="form-row">
                 <button id="btn-add-entry">添加条目</button>
             </div>
         </div>
-        <div class="tbl-wrap">
+        <div class="tbl-wrap" tabindex="0" role="region" aria-label="管理列表">
             <table class="tbl">
                 <thead><tr><th>ID</th><th>类型</th><th>内容</th><th>留言</th><th>状态</th><th>操作</th></tr></thead>
                 <tbody id="tb-entries"></tbody>
@@ -211,7 +156,7 @@
         </div>
 
         <h2 class="sec">条目评论</h2>
-        <div class="tbl-wrap">
+        <div class="tbl-wrap" tabindex="0" role="region" aria-label="管理列表">
             <table class="tbl">
                 <thead><tr><th>ID</th><th>页面 / 条目</th><th>署名</th><th>内容</th><th>状态</th><th>操作</th></tr></thead>
                 <tbody id="tb-ecomments"></tbody>
@@ -221,12 +166,12 @@
         <h2 class="sec">管理员</h2>
         <div class="card">
             <div class="form-row">
-                <input id="tk-name" maxlength="20" placeholder="给这个人起个名字（如：李四）">
+                <input id="tk-name" maxlength="20" placeholder="给这个人起个名字（如：李四）" aria-label="给这个人起个名字（如：李四）">
                 <button id="btn-add-token">生成新令牌</button>
             </div>
             <div class="msg-line" id="tk-new"></div>
         </div>
-        <div class="tbl-wrap">
+        <div class="tbl-wrap" tabindex="0" role="region" aria-label="管理列表">
             <table class="tbl">
                 <thead><tr><th>名字</th><th>令牌</th><th>创建</th><th>最近使用</th><th>操作</th></tr></thead>
                 <tbody id="tb-tokens"></tbody>
@@ -234,14 +179,14 @@
         </div>
 
         <h2 class="sec">操作日志</h2>
-        <div class="tbl-wrap">
+        <div class="tbl-wrap" tabindex="0" role="region" aria-label="管理列表">
             <table class="tbl">
                 <thead><tr><th>时间</th><th>谁</th><th>做了什么</th><th>对象</th><th>备注</th></tr></thead>
                 <tbody id="tb-audit"></tbody>
             </table>
         </div>
     </div>
-</div>
+</main>
 
 <script>
 (function () {
@@ -252,7 +197,7 @@
 
     function setStatus(txt, cls) {
         $('status').textContent = txt || '';
-        $('status').style.color = cls === 'err' ? '#c0392b' : (cls === 'ok' ? '#27ae60' : '#777');
+        $('status').style.color = cls === 'err' ? 'var(--accent)' : (cls === 'ok' ? 'var(--green)' : 'var(--soft)');
     }
 
     function api(path, opt) {
@@ -761,7 +706,7 @@
             if (r.body && r.body.ok) {
                 $('tk-name').value = '';
                 $('tk-new').textContent = '「' + r.body.name + '」的令牌（只显示这一次，复制给他）：' + r.body.token;
-                $('tk-new').style.color = '#c0392b';
+                $('tk-new').style.color = 'var(--accent)';
                 loadTokens();
             } else {
                 setStatus((r.body && r.body.error) || '生成失败', 'err');

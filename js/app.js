@@ -12,7 +12,14 @@
 
         var panel = document.createElement('div');
         panel.className = 'search-results';
+        panel.id = 'search-results';
+        panel.setAttribute('role', 'listbox');
+        panel.setAttribute('aria-label', '搜索结果');
         box.appendChild(panel);
+        input.setAttribute('role', 'combobox');
+        input.setAttribute('aria-autocomplete', 'list');
+        input.setAttribute('aria-controls', panel.id);
+        input.setAttribute('aria-expanded', 'false');
 
         function projectPageUrl(path) {
             var marker = location.pathname.indexOf('/pages/');
@@ -47,10 +54,16 @@
                 esc(text.slice(i + q.length, e)) + (e < text.length ? '…' : '');
         }
 
-        function close() { panel.classList.remove('show'); panel.innerHTML = ''; active = -1; }
+        function close() {
+            panel.classList.remove('show'); panel.innerHTML = ''; active = -1;
+            input.setAttribute('aria-expanded', 'false');
+            input.removeAttribute('aria-activedescendant');
+        }
 
         function render(q) {
             if (!q) { close(); return; }
+            input.setAttribute('aria-expanded', 'true');
+            input.removeAttribute('aria-activedescendant');
 
             if (!hits.length) {
                 panel.innerHTML = '<div class="search-empty">没有找到与「' + esc(q) + '」相关的词条</div>';
@@ -59,7 +72,7 @@
             }
 
             var rows = hits.slice(0, 60).map(function (it, i) {
-                return '<a class="search-result' + (i === active ? ' active' : '') + '" href="' + projectPageUrl(it.p) + '#' + it.a + '" data-i="' + i + '">' +
+                return '<a id="search-option-' + i + '" role="option" aria-selected="' + (i === active) + '" class="search-result' + (i === active ? ' active' : '') + '" href="' + projectPageUrl(it.p) + '#' + it.a + '" data-i="' + i + '">' +
                     '<div class="sr-head"><span class="sr-topic">' + esc(it.t) + '</span>' +
                     '<span class="sr-page">' + esc(it.d) + '</span></div>' +
                     '<div class="sr-snip">' + snip(it.x, q) + '</div></a>';
@@ -70,6 +83,7 @@
 
             panel.innerHTML = rows + foot;
             panel.classList.add('show');
+            if (active >= 0) input.setAttribute('aria-activedescendant', 'search-option-' + active);
 
             var cur = panel.querySelector('.search-result.active');
             if (cur && cur.scrollIntoView) { cur.scrollIntoView({ block: 'nearest' }); }
@@ -110,7 +124,7 @@
                 submit();
             } else if (e.key === 'ArrowDown' && open) {
                 e.preventDefault();
-                active = Math.min(active + 1, hits.length - 1);
+                active = Math.min(active + 1, Math.min(hits.length, 60) - 1);
                 render(input.value.trim());
             } else if (e.key === 'ArrowUp' && open) {
                 e.preventDefault();
@@ -127,19 +141,7 @@
             if (!box.contains(e.target)) { close(); }
         });
 
-        document.querySelectorAll('.directory-link').forEach(function (link) {
-            link.addEventListener('mouseenter', function () { this.style.transform = 'translateX(5px)'; });
-            link.addEventListener('mouseleave', function () { this.style.transform = 'translateX(0)'; });
-        });
-
-        if (location.hash.length > 1) {
-            var target = document.getElementById(location.hash.slice(1));
-            if (target && target.classList.contains('entry')) {
-                target.style.transition = 'background-color 1.4s';
-                target.style.backgroundColor = '#fff3b0';
-                setTimeout(function () { target.style.backgroundColor = ''; }, 2000);
-            }
-        }
+        // :target highlighting is theme-aware and also works after hash navigation.
     }
 
     if (document.readyState === 'loading') {

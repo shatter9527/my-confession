@@ -2,6 +2,8 @@
 
 彰武县高级中学 2022 级一班的班级纪念站，收录班规、往事、轶闻、人物册和《岁月史书》。
 
+界面参考 Delineate 的纸色与手绘风格，提供日夜模式、键盘搜索和手机导航。
+
 这是一个静态 HTML/CSS/JavaScript 网站，附带一个零第三方依赖的 Node.js 服务。静态内容可直接打开 `index.html` 浏览；人物册、留言板、评论和在线正文编辑需要启动服务。
 
 ## 快速开始
@@ -38,6 +40,8 @@ docker compose up -d --build
 
 ## 维护文档
 
+- [设计说明](docs/DESIGN.md)：页面组织、设计参考和交互约定
+- [第三方素材许可](docs/THIRD_PARTY_NOTICES.md)：Delineate 手绘花园的 MIT 署名
 - [开发指南](docs/DEVELOPMENT.md)：项目结构、内容修改、前后端职责和本地检查
 - [部署指南](docs/DEPLOYMENT.md)：本机、局域网、Docker/NAS、备份和公开访问
 - [服务器更新记录](docs/releases/UPDATE-20261018.md)：2026-10-18 的一次性上线步骤
@@ -48,6 +52,6 @@ docker compose up -d --build
 
 访客提交的人物册内容和留言存放在 `data/app.db`。首次启动时，服务会生成管理口令并写入 `config.json`；这两个路径已加入 `.gitignore`，不要提交或公开它们。部署到互联网前，请配置 HTTPS 和强管理口令。
 
-项目没有构建步骤或第三方运行时依赖。正文页面按栏目放在 `pages/`；共用代码在 `css/`、`js/`，图片和录音在 `assets/media/`。旧页面与素材 URL 会跳转到新位置。
+项目没有构建步骤或第三方运行时依赖。`npm run check` 可直接检查页面与脚本；安装可选开发依赖后运行 `npm test` 进行浏览器回归。正文页面按栏目放在 `pages/`；共用代码在 `css/`、`js/`，图片和录音在 `assets/media/`。旧页面与素材 URL 会跳转到新位置。
 
 <p align="center"><sub>2022 级一班 · 留个念想</sub></p>

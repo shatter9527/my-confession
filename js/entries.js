@@ -44,15 +44,19 @@
         var nameIn = document.createElement('input');
         nameIn.type = 'text';
         nameIn.placeholder = '署名（可留空）';
+        nameIn.setAttribute('aria-label', '留言署名（可留空）');
         nameIn.maxLength = 20;
         var textIn = document.createElement('textarea');
         textIn.placeholder = '说点什么…';
+        textIn.setAttribute('aria-label', '留言内容');
+        textIn.required = true;
         textIn.maxLength = 400;
         textIn.rows = 2;
         var sendBtn = document.createElement('button');
         sendBtn.type = 'submit';
         sendBtn.textContent = '发送';
         var tip = el('span', 'cmt-tip');
+        tip.setAttribute('role', 'status');
 
         var row = el('div', 'cmt-form-row');
         row.appendChild(nameIn);
@@ -65,6 +69,7 @@
 
         function label() {
             toggle.textContent = (n > 0 ? '留言 ' + n : '写留言') + (opened ? ' ▲' : ' ▼');
+            toggle.setAttribute('aria-expanded', String(opened));
         }
 
         function renderList(items) {
@@ -137,6 +142,9 @@
 
     /* ---------- 主流程 ---------- */
     function apply() {
+        if (location.protocol === 'file:') { return; }
+        // The editor saves the base HTML; comment controls and extra entries are runtime UI.
+        if (window.self !== window.top && new URLSearchParams(location.search).has('edit')) { return; }
         var scope = document.querySelector('.content-left');
         if (!scope) { return; }
         var hasEntries = scope.querySelector('.entry, .quote');
@@ -184,9 +192,7 @@
         }).catch(function () { /* 离线时保持静态内容 */ });
     }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', apply);
-    } else {
-        apply();
-    }
+    function boot() { Promise.resolve(window.MFContentReady).then(apply); }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+    else boot();
 })();
