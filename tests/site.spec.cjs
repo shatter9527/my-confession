@@ -15,7 +15,7 @@ test('homepage navigation, keyboard search, tabs and persistent theme', async ({
     await expect(page.getByRole('heading', { name: /把青春，\s*写成我们。/ })).toBeVisible();
     const heroPhoto = page.getByRole('img', { name: '一班同学与老师的毕业合影' });
     await expect(heroPhoto).toBeVisible();
-    await expect.poll(() => heroPhoto.evaluate(el => el.naturalWidth)).toBe(1448);
+    await expect.poll(() => heroPhoto.evaluate(el => el.naturalWidth)).toBe(1824);
     if (isMobile) await page.getByRole('button', { name: '展开导航' }).click();
     await page.getByRole('navigation', { name: '主导航' }).getByText('翻开目录').click();
     await expect(page).toHaveURL(/#chapters$/);

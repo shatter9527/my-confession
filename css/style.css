@@ -81,7 +81,7 @@ h1, h2, h3 { font-weight: 600; }
 .sr-snip { font-size: 15px; color: var(--soft); margin-top: 5px; overflow-wrap: anywhere; }
 mark { background: var(--highlight); color: inherit; }
 .search-hint, .search-empty { padding: 14px 22px; font-size: 14px; color: var(--soft); }
-/* Opening spread. The transparent class photo fades gently into the paper. */
+/* Opening spread. The full class photo fades gently into the paper at its edges. */
 .home-content { padding: 0; }
 .opening { min-height: min(810px, calc(100svh - 86px)); position: relative; display: grid; align-items: center; overflow: hidden; }
 .opening-copy { position: relative; z-index: 2; padding: 90px 0 125px; width: 51%; }
@@ -89,7 +89,7 @@ mark { background: var(--highlight); color: inherit; }
 .opening h1 { font: 600 clamp(52px, 5.8vw, 84px)/1.43 var(--display); letter-spacing: -.035em; margin: 0 0 26px; }
 .opening h1 em { color: var(--accent); font-style: normal; }
 .opening .intro { color: var(--soft); font-size: 16px; line-height: 2; max-width: 360px; margin-bottom: 31px; }
-.hero-photo { position: absolute; width: 60%; right: 0; bottom: 82px; pointer-events: none; transform-origin: 50% 65%; mask-image: linear-gradient(to bottom, #000 0%, #000 77%, transparent 100%); }
+.hero-photo { position: absolute; width: 60%; right: 0; bottom: 82px; pointer-events: none; transform-origin: 50% 65%; mask-image: linear-gradient(to right, transparent, #000 14%, #000 86%, transparent), linear-gradient(to bottom, transparent, #000 8%, #000 78%, transparent); mask-composite: intersect; }
 .hero-photo img { width: 100%; height: auto; filter: saturate(.72) sepia(.09) contrast(.96) brightness(1.02); transform: translate(calc(var(--px, 0) * -5px), calc(var(--py, 0) * -3px)); transition: transform 1.2s var(--ease); }
 [data-theme="night"] .hero-photo img { filter: saturate(.65) sepia(.06) brightness(.82) contrast(.96); }
 .opening-bottom { position: absolute; bottom: 30px; left: var(--gutter); right: var(--gutter); display: flex; justify-content: space-between; gap: 20px; font: 12px/1.6 var(--mono); letter-spacing: .13em; color: var(--soft); }
