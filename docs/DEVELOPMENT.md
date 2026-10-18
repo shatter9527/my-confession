@@ -39,8 +39,12 @@ pages/memories/        往事与《岁月史书》
 pages/info/            关于、联系、帮助和版权页面
 pages/admin.html       管理审核页面
 pages/admin-content.html 在线正文编辑页面
+admin.js               本机管理员名单与令牌查询
+release.json           发布版本；GET /api/version 返回版本及源码指纹
 backup.js              SQLite 一致性备份
 scripts/check.cjs      链接、锚点和脚本静态检查
+scripts/package-release.py  生成不含私密数据的部署 ZIP
+releases/              本地部署包（不提交）
 tests/                 使用隔离 SQLite 的 Playwright 回归测试
 docs/                  开发和部署指南
 docs/releases/         按版本归档的一次性更新说明
@@ -51,7 +55,9 @@ README-DEPLOY.txt      指向归档部署说明的根目录兼容指针
 UPDATE-20261018.md     指向版本更新记录的根目录兼容指针
 materials/source-text.txt  网站原始文本资料，不由运行时代码读取
 data/app.db            运行时数据库（自动生成，不提交）
-config.json            管理口令等运行配置（自动生成，不提交）
+config.json            旧版配置，仅用于一次性迁移（不提交）
+lib/admin-store.js     管理员、审核设置、事务及配置迁移
+js/admin-client.js     两个后台页共享的登录状态与请求
 ```
 
 ### 页面目录与 URL 兼容
@@ -70,7 +76,7 @@ config.json            管理口令等运行配置（自动生成，不提交）
 
 首页图片和录音位于 `assets/media/`。替换素材时沿用原文件名，或同步修改 `index.html` 的 `src`；旧根路径仍会跳转到新地址。
 
-人物册页面的 `#people-static` 保存内置原始词条，始终显示；`#people-list` 只展示 SQLite 中的在线新增人物。空库、其他分类有数据或接口失败都不能隐藏内置词条，原始词条不自动写入数据库。
+“正常人”分类已删除六条内置原文，只显示在线人物。其他人物册页面的 `#people-static` 保存内置原始词条，排在在线列表前方并始终显示；`#people-list` 只展示 SQLite 中的在线新增人物。空库、其他分类有数据或接口失败都不能隐藏内置词条，原始词条不自动写入数据库。
 
 人物册、留言板和评论是动态功能：前端交互在 `js/people.js`，服务端校验、管理权限和数据持久化在 `server.js`。服务端使用 Node 内置 `node:http` 和 `node:sqlite`，数据库文件在 `data/app.db`。新增或调整数据字段时，同时检查 API 输入校验、`pages/admin.html` 展示以及现有数据库的兼容性。静态正文页可通过 `pages/admin-content.html` 在线编辑，服务端以页面文件名保存覆盖内容和历史版本。原始文本目录不由静态服务器公开。
 
@@ -78,6 +84,7 @@ config.json            管理口令等运行配置（自动生成，不提交）
 
 | 路由 | 用途 |
 |---|---|
+| `GET /api/version` | 返回当前发布版本和源码指纹，不含令牌 |
 | `GET/POST /api/people` | 读取或提交人物词条；开启词条审核后，新词条进入待审核状态 |
 | `DELETE /api/people/:id` | 删除词条或提交删除申请，行为由审核开关决定 |
 | `GET/POST /api/messages` | 读取或提交留言；留言审核开启时，新留言不会立即公开 |
@@ -104,9 +111,9 @@ config.json            管理口令等运行配置（自动生成，不提交）
 
 ## 数据与备份
 
-服务启动时会创建 `data/` 和 SQLite 数据库；首次启动还会生成 `config.json` 中的管理口令，并输出到启动终端。不要提交数据库、口令或备份，也不要公开分享包含管理口令的启动日志。
+服务启动时会创建 `data/` 和 SQLite 数据库；首次安装会把默认管理员写入数据库，初始令牌仅在第一次启动终端显示。旧 `config.json` 自动一次性导入，原文件不改动；迁移完成后数据库为管理员和审核设置的权威源。不要提交数据库、口令或备份，也不要公开分享包含管理口令的启动日志。
 
-运行 `node backup.js` 可在服务所在目录的 `data/backup/` 生成 SQLite 一致性快照，脚本最多保留 30 份。Docker 部署的数据目录挂载在命名卷中；容器内没有安装项目开发工具，源码修改后需重新构建镜像。
+运行 `node backup.js` 可在服务所在目录的 `data/backup/` 生成 SQLite 一致性快照，包含管理员、令牌、审核设置和日志，脚本最多保留 30 份。Docker 部署的数据目录挂载在命名卷中；容器内没有安装项目开发工具，源码修改后需重新构建镜像。
 
 ## 本地核对清单
 
@@ -134,3 +141,5 @@ Linux 新环境缺少浏览器依赖时，可使用 `npx playwright install --wi
 测试会分别使用桌面和手机视口，自动创建临时网站副本、独立管理口令和数据库；完成后停止测试服务并清理临时数据。失败截图与 trace 在已忽略的 `test-results/` 下。`npm run check` 不需要安装开发依赖。
 
 界面约定与来源说明见 [设计说明](DESIGN.md)。改版后仍可使用原来的 `./start.sh`、`start.bat` 和 Docker Compose 启动。
+
+管理员模块接口、迁移和恢复说明见 [管理员指南](ADMINISTRATION.md)。`npm run test:unit` 可独立运行不需要浏览器的持久化异常测试；`npm test` 同时运行这些测试与浏览器回归。

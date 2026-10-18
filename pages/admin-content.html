@@ -6,9 +6,9 @@
     <title>正文编辑 · My Confession</title>
     <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 
-    <link rel="stylesheet" href="../css/style.css">
-    <link rel="stylesheet" href="../css/admin.css">
-    <script src="../js/site.js" defer></script>
+    <link rel="stylesheet" href="../css/style.css?v=20261018-admin4">
+    <link rel="stylesheet" href="../css/admin.css?v=20261018-admin4">
+    <script src="../js/site.js?v=20261018-admin4" defer></script>
 </head>
 <body class="editor-page">
 
@@ -16,6 +16,8 @@
     <h1>✎ 正文编辑</h1>
     <input type="password" id="token" placeholder="管理口令" autocomplete="off" aria-label="管理口令">
     <button id="btn-token">载入</button>
+    <button id="btn-forget" class="gray">清除本机口令</button>
+    <span id="admin-identity" class="hint">未载入管理员</span>
     <select aria-label="选择编辑页面" id="page"><option value="">— 选择页面 —</option></select>
     <button id="btn-save">保存</button>
     <button id="btn-reset" class="warn">恢复默认</button>
@@ -27,11 +29,13 @@
 <div id="history" class="hidden"></div>
 <iframe id="frame" src="about:blank" title="正文编辑预览"></iframe>
 
+<script src="../js/admin-client.js?v=20261018-admin4"></script>
 <script>
 (function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var token = localStorage.getItem('mf_admin_token') || '';
+    var client = window.MFAdmin;
+    var token = client.token();
     $('token').value = token;
     var current = '';
     var pagePath = {};
@@ -41,27 +45,41 @@
         $('msg').className = 'msg' + (cls ? ' ' + cls : '');
     }
 
-    function api(path, opt) {
-        opt = opt || {};
-        opt.headers = Object.assign({ 'x-admin-token': token }, opt.headers || {});
-        return fetch(path, opt).then(function (r) {
-            return r.json().then(function (j) { return { status: r.status, body: j }; });
-        });
+    var api = client.request;
+    var post = client.post;
+    function resetEditor() {
+        current = '';
+        $('page').textContent = '';
+        $('history').textContent = '';
+        $('history').classList.add('hidden');
+        $('frame').src = 'about:blank';
+        $('admin-identity').textContent = '未载入管理员';
+        ['page', 'btn-save', 'btn-reset', 'btn-history', 'btn-reload'].forEach(function (id) { $(id).disabled = true; });
+        $('btn-token').disabled = false;
     }
-    function post(path, payload) {
-        return api(path, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload || {})
-        });
-    }
+    client.subscribe(function (state) {
+        token = state.token;
+        if (state.reason === 'network-error') { setMsg('请求失败，请检查连接后重试', 'err'); return; }
+        $('token').value = token;
+        resetEditor();
+        if (!token) setMsg(state.reason === 'unauthorized' ? '令牌已失效，请重新载入' : '已清除本机口令');
+        if (token && state.reason === 'storage') loadPages();
+    });
+    $('btn-forget').addEventListener('click', function () { client.clear(); });
+    resetEditor();
 
     function loadPages() {
         if (!token) { setMsg('先粘贴管理口令再点「载入」', 'err'); return; }
         api('/api/admin/pages').then(function (r) {
             if (r.status === 401) { setMsg('口令不正确', 'err'); return; }
             if (!r.body || !r.body.ok) { setMsg('读取页面列表失败', 'err'); return; }
-            localStorage.setItem('mf_admin_token', token);
+            client.remember();
+            ['page', 'btn-save', 'btn-reset', 'btn-history', 'btn-reload'].forEach(function (id) { $(id).disabled = false; });
+            api('/api/admin/tokens').then(function (r) {
+                if (!r.body || !r.body.ok) return;
+                var me = r.body.tokens.find(function (a) { return a.self; });
+                if (me) $('admin-identity').textContent = '当前管理员：' + me.name;
+            });
             var sel = $('page');
             sel.textContent = '';
             var opt0 = document.createElement('option');
@@ -115,7 +133,7 @@
     });
 
     $('btn-token').addEventListener('click', function () {
-        token = $('token').value.trim();
+        client.use($('token').value);
         $('btn-token').disabled = false;
         loadPages();
     });

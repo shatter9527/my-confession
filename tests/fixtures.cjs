@@ -10,7 +10,7 @@ const token = 'isolated-browser-test-token';
 const test = base.test.extend({
     app: async ({}, use) => {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'my-confession-test-'));
-        for (const file of ['server.js', 'index.html', '1.5.html', 'pages', 'css', 'js']) fs.cpSync(path.join(root, file), path.join(dir, file), { recursive: true });
+        for (const file of ['server.js', 'admin.js', 'release.json', 'lib', 'index.html', '1.5.html', 'pages', 'css', 'js']) fs.cpSync(path.join(root, file), path.join(dir, file), { recursive: true });
         fs.symlinkSync(path.join(root, 'assets'), path.join(dir, 'assets'), 'dir');
         fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ adminToken: token }));
         const reservation = net.createServer();

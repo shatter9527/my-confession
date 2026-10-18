@@ -7,7 +7,7 @@ ENV NODE_ENV=production \
 WORKDIR /app
 COPY --chown=node:node . .
 
-# Keep the generated admin config beside SQLite data so one volume preserves both.
+# Preserve access to legacy config for one-time import; administrators now live in SQLite.
 RUN mkdir -p /app/data \
     && ln -s /app/data/config.json /app/config.json \
     && chown node:node /app/data

@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>审核台 · My Confession</title>
     <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="../css/style.css?v=20261018-admin4">
 
-    <link rel="stylesheet" href="../css/admin.css">
-    <script src="../js/site.js" defer></script>
+    <link rel="stylesheet" href="../css/admin.css?v=20261018-admin4">
+    <script src="../js/site.js?v=20261018-admin4" defer></script>
 </head>
 <body>
 
@@ -16,6 +16,8 @@
     <div class="admin-head">
         <h1><i class="fas fa-shield-halved" style="color:#3498db"></i> 审核台</h1>
         <nav>
+            <a href="#administrators">管理员</a>
+            <a href="#audit-log">操作日志</a>
             <a href="admin-content.html">✎ 正文编辑</a>
             <a href="../index.html">← 回到站点</a>
             <button class="icon-button theme-toggle" type="button" aria-label="切换夜间模式" aria-pressed="false">◐</button>
@@ -32,6 +34,7 @@
         <button id="btn-snapshot" class="ghost" title="把已发布人物导出成 data/people.json">导出静态快照</button>
         <button id="btn-forget" class="ghost">清除本机口令</button>
     </div>
+    <div class="hint" id="admin-identity">未载入管理员</div>
     <div class="msg-line" id="status" role="status"></div>
 
     <div id="panel" class="hide">
@@ -163,36 +166,44 @@
             </table>
         </div>
 
-        <h2 class="sec">管理员</h2>
+        <h2 class="sec" id="administrators">管理员</h2>
         <div class="card">
             <div class="form-row">
                 <input id="tk-name" maxlength="20" placeholder="给这个人起个名字（如：李四）" aria-label="给这个人起个名字（如：李四）">
                 <button id="btn-add-token">生成新令牌</button>
             </div>
             <div class="msg-line" id="tk-new"></div>
+            <button id="btn-copy-token" class="ghost hide">复制新令牌</button>
         </div>
         <div class="tbl-wrap" tabindex="0" role="region" aria-label="管理列表">
             <table class="tbl">
-                <thead><tr><th>名字</th><th>令牌</th><th>创建</th><th>最近使用</th><th>操作</th></tr></thead>
+                <thead><tr><th>名字</th><th>令牌</th><th>状态</th><th>创建</th><th>最近使用</th><th>操作</th></tr></thead>
                 <tbody id="tb-tokens"></tbody>
             </table>
         </div>
 
-        <h2 class="sec">操作日志</h2>
+        <h2 class="sec" id="audit-log">操作日志</h2>
+        <div class="form-row">
+            <select id="audit-admin" aria-label="按管理员筛选日志"><option value="">全部管理员</option></select>
+            <button id="btn-audit-refresh" class="ghost">刷新日志</button>
+        </div>
         <div class="tbl-wrap" tabindex="0" role="region" aria-label="管理列表">
             <table class="tbl">
                 <thead><tr><th>时间</th><th>谁</th><th>做了什么</th><th>对象</th><th>备注</th></tr></thead>
                 <tbody id="tb-audit"></tbody>
             </table>
         </div>
+        <button id="btn-audit-more" class="ghost hide">加载更早日志</button>
     </div>
 </main>
 
+<script src="../js/admin-client.js?v=20261018-admin4"></script>
 <script>
 (function () {
     'use strict';
     var $ = function (id) { return document.getElementById(id); };
-    var token = localStorage.getItem('mf_admin_token') || '';
+    var client = window.MFAdmin;
+    var token = client.token();
     $('token').value = token;
 
     function setStatus(txt, cls) {
@@ -200,21 +211,23 @@
         $('status').style.color = cls === 'err' ? 'var(--accent)' : (cls === 'ok' ? 'var(--green)' : 'var(--soft)');
     }
 
-    function api(path, opt) {
-        opt = opt || {};
-        opt.headers = Object.assign({ 'x-admin-token': token }, opt.headers || {});
-        return fetch(path, opt).then(function (r) {
-            return r.json().then(function (j) { return { status: r.status, body: j }; });
-        });
-    }
-
-    function post(path, payload) {
-        return api(path, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload || {})
-        });
-    }
+    var api = client.request;
+    var post = client.post;
+    client.subscribe(function (state) {
+        token = state.token;
+        if (state.reason === 'network-error') { setStatus('请求失败，请检查连接后重试', 'err'); return; }
+        $('token').value = token;
+        $('panel').classList.add('hide');
+        $('admin-identity').textContent = '未载入管理员';
+        $('tk-new').textContent = '';
+        newCredential = '';
+        $('btn-copy-token').classList.add('hide');
+        $('btn-add-token').disabled = false;
+        $('btn-snapshot').disabled = true;
+        if (!token) setStatus(state.reason === 'unauthorized' ? '令牌已失效，请重新载入' : '已清除本机口令');
+        if (token && state.reason === 'storage') load();
+    });
+    $('btn-snapshot').disabled = true;
 
     function cell(tr, text, cls) {
         var td = document.createElement('td');
@@ -479,7 +492,8 @@
         api('/api/admin/all').then(function (r) {
             if (r.status === 401) { setStatus('口令不正确', 'err'); return; }
             if (!r.body || !r.body.ok) { setStatus('载入失败', 'err'); return; }
-            localStorage.setItem('mf_admin_token', token);
+            client.remember();
+            $('btn-snapshot').disabled = false;
             $('panel').classList.remove('hide');
 
             var pendingPeople = (r.body.people || []).filter(function (p) { return p.status === 'pending'; });
@@ -661,95 +675,112 @@
         });
     }
 
-    // ---------- 管理员令牌
-    function fmtDate(ms) {
-        if (!ms) return '—';
-        var d = new Date(Number(ms));
-        var p = function (x) { return String(x).padStart(2, '0'); };
-        return p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    // ---------- 管理员：稳定身份与当前令牌
+    var newCredential = '';
+    var auditBefore = null;
+    var auditGeneration = 0;
+    function fmtDate(ms) { return ms ? new Date(Number(ms)).toLocaleString() : '—'; }
+    function showCredential(r) {
+        newCredential = r.token;
+        $('tk-new').textContent = '「' + r.name + '」的新令牌（请复制保存）：' + r.token;
+        $('btn-copy-token').classList.remove('hide');
     }
-
+    async function mutateAdmin(button, path, payload) {
+        button.disabled = true;
+        try {
+            var r = await post(path, payload);
+            if (!r.body || !r.body.ok) { setStatus(r.body && r.body.error || '操作失败', 'err'); return; }
+            if (r.body.self && r.body.token) {
+                client.replace(r.body.token);
+                load();
+            }
+            if (r.body.token) showCredential(r.body);
+            if (path === '/api/admin/tokens') $('tk-name').value = '';
+            setStatus('已保存', 'ok');
+            loadTokens(); loadAudit();
+        } finally { button.disabled = false; }
+    }
+    function action(label, handler) {
+        var button = btn(label, 'ghost', function () { handler(button); });
+        return button;
+    }
     function loadTokens() {
         api('/api/admin/tokens').then(function (r) {
             if (!r.body || !r.body.ok) return;
-            var tb = $('tb-tokens');
-            tb.textContent = '';
+            var tb = $('tb-tokens'); tb.textContent = '';
+            var selected = $('audit-admin').value;
+            $('audit-admin').textContent = '';
+            var all = document.createElement('option'); all.value = ''; all.textContent = '全部管理员';
+            $('audit-admin').appendChild(all);
             r.body.tokens.forEach(function (a) {
-                var tr = document.createElement('tr');
+                var option = document.createElement('option'); option.value = a.id; option.textContent = a.name;
+                $('audit-admin').appendChild(option);
+                if (a.self) $('admin-identity').textContent = '当前管理员：' + a.name;
+                var tr = document.createElement('tr'); tr.dataset.adminId = a.id;
                 cell(tr, a.name + (a.self ? '（你）' : ''));
-                cell(tr, a.hint);
-                cell(tr, fmtDate(a.createdAt));
-                cell(tr, a.lastUsedAt ? fmtDate(a.lastUsedAt) : '还没用过');
+                cell(tr, a.hint); cell(tr, a.active ? '有效' : '已停用');
+                cell(tr, fmtDate(a.createdAt)); cell(tr, fmtDate(a.lastUsedAt));
                 var ops = document.createElement('td');
-                if (a.self) {
-                    cell(ops, '当前使用中');
-                } else {
-                    ops.appendChild(btn('吊销', 'warn', function () {
-                        if (!confirm('吊销「' + a.name + '」的令牌？他那边会立刻失去后台权限。')) return;
-                        post('/api/admin/tokens/revoke', { id: a.id }).then(function (rr) {
-                            if (rr.body && rr.body.ok) { setStatus('已吊销', 'ok'); loadTokens(); }
-                            else setStatus((rr.body && rr.body.error) || '吊销失败', 'err');
-                        });
-                    }));
-                }
-                tr.appendChild(ops);
-                tb.appendChild(tr);
+                ops.appendChild(action('改名', function (button) {
+                    var name = prompt('管理员的新名字', a.name);
+                    if (name !== null) mutateAdmin(button, '/api/admin/tokens/rename', { id: a.id, name: name });
+                }));
+                if (a.active) ops.appendChild(action('换令牌', function (button) {
+                    if (confirm('更换「' + a.name + '」的令牌？原令牌将立即失效，请保存新令牌。'))
+                        mutateAdmin(button, '/api/admin/tokens/rotate', { id: a.id });
+                }));
+                if (!a.self) ops.appendChild(action(a.active ? '停用' : '启用', function (button) {
+                    if (confirm(a.active ? '停用「' + a.name + '」？其令牌会立即失效。' : '启用「' + a.name + '」并生成新令牌？'))
+                        mutateAdmin(button, '/api/admin/tokens/status', { id: a.id, active: !a.active });
+                }));
+                tr.appendChild(ops); tb.appendChild(tr);
             });
+            $('audit-admin').value = selected;
         });
     }
-
     $('btn-add-token').addEventListener('click', function () {
-        if (!token) { setStatus('先载入口令', 'err'); return; }
         var name = $('tk-name').value.trim();
-        if (!name) { setStatus('给这个人起个名字', 'err'); return; }
-        post('/api/admin/tokens', { name: name }).then(function (r) {
-            if (r.body && r.body.ok) {
-                $('tk-name').value = '';
-                $('tk-new').textContent = '「' + r.body.name + '」的令牌（只显示这一次，复制给他）：' + r.body.token;
-                $('tk-new').style.color = 'var(--accent)';
-                loadTokens();
-            } else {
-                setStatus((r.body && r.body.error) || '生成失败', 'err');
-            }
-        });
+        if (!name) { setStatus('请填写管理员名字', 'err'); return; }
+        mutateAdmin(this, '/api/admin/tokens', { name: name });
+    });
+    $('btn-copy-token').addEventListener('click', async function () {
+        try { await navigator.clipboard.writeText(newCredential); setStatus('令牌已复制', 'ok'); }
+        catch (_) { setStatus('无法自动复制，请选中上面的令牌手动复制'); }
     });
 
-    // ---------- 操作日志
-    function loadAudit() {
-        api('/api/admin/audit').then(function (r) {
-            if (!r.body || !r.body.ok) return;
+    // ---------- 操作日志（游标分页，保留操作时的名字）
+    function loadAudit(more) {
+        var generation = more ? auditGeneration : ++auditGeneration;
+        var params = new URLSearchParams({ adminId: $('audit-admin').value, limit: '50' });
+        if (more && auditBefore) params.set('before', auditBefore);
+        $('btn-audit-more').disabled = true;
+        api('/api/admin/audit?' + params).then(function (r) {
+            if (generation !== auditGeneration || !r.body || !r.body.ok) return;
             var tb = $('tb-audit');
-            tb.textContent = '';
+            if (!more) tb.textContent = '';
             r.body.items.forEach(function (a) {
                 var tr = document.createElement('tr');
-                cell(tr, fmtDate(a.created_at));
-                cell(tr, a.admin_name);
-                cell(tr, a.action);
-                cell(tr, a.target);
-                cell(tr, a.detail, 'note');
+                cell(tr, fmtDate(a.created_at)); cell(tr, a.admin_name);
+                cell(tr, a.action); cell(tr, a.target); cell(tr, a.detail, 'note');
                 tb.appendChild(tr);
             });
-            if (!r.body.items.length) {
-                var tr0 = document.createElement('tr');
-                cell(tr0, '还没有操作记录');
-                tb.appendChild(tr0);
-            }
-        });
+            if (!tb.children.length) { var tr = document.createElement('tr'); cell(tr, '还没有操作记录'); tb.appendChild(tr); }
+            auditBefore = r.body.nextBefore;
+            $('btn-audit-more').classList.toggle('hide', !auditBefore);
+        }).finally(function () { $('btn-audit-more').disabled = false; });
     }
+    $('audit-admin').addEventListener('change', function () { loadAudit(); });
+    $('btn-audit-refresh').addEventListener('click', function () { loadAudit(); });
+    $('btn-audit-more').addEventListener('click', function () { loadAudit(true); });
 
     $('btn-load').addEventListener('click', function () {
-        token = $('token').value.trim();
+        client.use($('token').value);
         load();
     });
     $('token').addEventListener('keypress', function (e) {
         if (e.key === 'Enter') { $('btn-load').click(); }
     });
-    $('btn-forget').addEventListener('click', function () {
-        localStorage.removeItem('mf_admin_token');
-        $('token').value = '';
-        $('panel').classList.add('hide');
-        setStatus('已清除本机保存的口令');
-    });
+    $('btn-forget').addEventListener('click', function () { client.clear(); });
     $('btn-snapshot').addEventListener('click', function () {
         if (!token) { setStatus('先载入口令', 'err'); return; }
         post('/api/admin/snapshot', {}).then(function (r) {

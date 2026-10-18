@@ -1,11 +1,11 @@
 /**
- * My Confession 后端 —— 零依赖单文件：node server.js
+ * My Confession 后端 —— 零第三方运行时依赖：node server.js
  * 存储：SQLite（Node 24 内置 node:sqlite，不需要 npm install）
  *
  * 权限模型
  *   · 静态文件（正文 / 岁月史书 / 鸣谢栏 …）永远只读，任何人都改不到
  *   · 访客可写：人物册、留言板、词条留言
- *   · 三个独立审核开关（config.json）：peopleModerated / messagesModerated / commentsModerated
+ *   · 三个独立审核开关（SQLite）：peopleModerated / messagesModerated / commentsModerated
  *   · 管理员可在后台直接编辑各页正文（存覆盖层，随时可恢复默认）
  *   · 删除一律软删除（status 变化），数据不会真没，管理口令可恢复
  *
@@ -21,6 +21,9 @@ const crypto = require('crypto');
 const { DatabaseSync } = require('node:sqlite');
 
 const ROOT = __dirname;
+const RELEASE = require('./release.json');
+const sourceFiles = ['server.js', 'lib/admin-store.js', 'js/people.js', 'js/admin-client.js', 'pages/people/people-normal.html'];
+const BUILD = crypto.createHash('sha256').update(sourceFiles.map(file => fs.readFileSync(path.join(ROOT, file))).join('\n')).digest('hex').slice(0, 12);
 const DATA_DIR = path.join(ROOT, 'data');
 const DB_FILE = path.join(DATA_DIR, 'app.db');
 const CONFIG_FILE = path.join(ROOT, 'config.json');
@@ -74,46 +77,6 @@ function findFile(name) {
 }
 const ADMIN_PAGE = findFile('admin.html');
 const EDITOR_PAGE = findFile('admin-content.html');
-
-// ---------------------------------------------------------------- 配置
-function newToken() {
-  return crypto.randomBytes(18).toString('hex');
-}
-
-function loadConfig() {
-  let cfg = {};
-  if (fs.existsSync(CONFIG_FILE)) {
-    try { cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch { cfg = {}; }
-  }
-  let dirty = false;
-
-  // 多管理员：每个令牌一条记录。旧的单 adminToken 自动迁移成「默认」。
-  if (!Array.isArray(cfg.adminTokens)) { cfg.adminTokens = []; dirty = true; }
-  if (cfg.adminTokens.length === 0) {
-    cfg.adminTokens.push({
-      id: 'a1',
-      name: '默认',
-      token: cfg.adminToken || newToken(),
-      createdAt: Date.now(),
-      lastUsedAt: 0,
-    });
-    dirty = true;
-  }
-  delete cfg.adminToken;   // 只保留 adminTokens，避免同一个口令存两处
-
-  if (typeof cfg.messagesModerated !== 'boolean') { cfg.messagesModerated = false; dirty = true; }
-  if (typeof cfg.peopleModerated !== 'boolean') { cfg.peopleModerated = false; dirty = true; }
-  if (typeof cfg.commentsModerated !== 'boolean') { cfg.commentsModerated = false; dirty = true; }
-  if (dirty) fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
-  return cfg;
-}
-const CONFIG = loadConfig();
-const saveConfig = () => fs.writeFileSync(CONFIG_FILE, JSON.stringify(CONFIG, null, 2), 'utf8');
-const publicSettings = () => ({
-  peopleModerated: CONFIG.peopleModerated,
-  messagesModerated: CONFIG.messagesModerated,
-  commentsModerated: CONFIG.commentsModerated,
-});
 
 // ---------------------------------------------------------------- 数据库
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -180,18 +143,6 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_content_history ON content_history(page, saved_at DESC);
 
-  -- 管理员操作日志：谁、做了什么、对象是谁、什么时候
-  CREATE TABLE IF NOT EXISTS audit_log (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    admin_id   TEXT NOT NULL DEFAULT '',
-    admin_name TEXT NOT NULL DEFAULT '',
-    action     TEXT NOT NULL,
-    target     TEXT NOT NULL DEFAULT '',
-    detail     TEXT NOT NULL DEFAULT '',
-    created_at INTEGER NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_audit ON audit_log(created_at DESC);
-
   -- 正文条目：HTML 里的条目按 id 覆盖，额外条目单独存，隐藏按 id 记
   CREATE TABLE IF NOT EXISTS entry_overrides (
     page       TEXT NOT NULL,
@@ -228,6 +179,10 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_ecomments ON entry_comments(page, eid, status, created_at DESC);
 `);
+
+const { createAdminStore } = require('./lib/admin-store');
+const admins = createAdminStore(db, CONFIG_FILE);
+const publicSettings = () => admins.settings();
 
 const q = {
   listPublished: db.prepare(
@@ -304,15 +259,6 @@ const q = {
   countMsgs: db.prepare(`SELECT COUNT(*) c FROM messages WHERE status='published'`),
   countPendingPeople: db.prepare(`SELECT COUNT(*) c FROM people WHERE status='pending'`),
   countPendingRequests: db.prepare(`SELECT COUNT(*) c FROM people_requests WHERE status='pending'`),
-
-  // 操作日志
-  insertAudit: db.prepare(
-    `INSERT INTO audit_log (admin_id,admin_name,action,target,detail,created_at)
-     VALUES (?,?,?,?,?,?)`),
-  listAudit: db.prepare(
-    `SELECT id,admin_id,admin_name,action,target,detail,created_at
-     FROM audit_log ORDER BY id DESC LIMIT 200`),
-  trimAudit: db.prepare(`DELETE FROM audit_log WHERE id <= (SELECT MAX(id) FROM audit_log) - 2000`),
 
   // 正文条目
   listOverrides: db.prepare(`SELECT eid,body FROM entry_overrides WHERE page=?`),
@@ -430,43 +376,12 @@ function readBody(req, limit = 512 * 1024) {
 
 const clip = (v, n) => String(v == null ? '' : v).replace(/\u0000/g, '').trim().slice(0, n);
 
-/**
- * 认出请求来自哪个管理员。命中返回 {id,name,token,...}，否则 null。
- * 顺手更新 lastUsedAt（节流 60 秒，避免每个请求都写盘）。
- */
-function adminOf(req) {
-  const raw = req.headers['x-admin-token'];
-  if (!raw) return null;
-  const given = Buffer.from(String(raw));
-  for (const a of CONFIG.adminTokens) {
-    const want = Buffer.from(String(a.token || ''));
-    if (given.length !== want.length) continue;
-    if (!crypto.timingSafeEqual(given, want)) continue;
-    const now = Date.now();
-    if (!a.lastUsedAt || now - a.lastUsedAt > 60000) {
-      a.lastUsedAt = now;
-      try { saveConfig(); } catch { /* 写盘失败不影响鉴权 */ }
-    }
-    return a;
-  }
-  return null;
-}
+function adminOf(req) { return admins.authenticate(req.headers['x-admin-token']); }
 
-/** 记一条管理员操作。失败不抛（日志不该拖垮业务）。 */
+// Content changes retain best-effort logging; administrator changes are transactional.
 function audit(admin, action, target, detail) {
-  try {
-    q.insertAudit.run(
-      admin ? String(admin.id) : '',
-      admin ? String(admin.name) : '未知',
-      String(action),
-      String(target == null ? '' : target),
-      String(detail == null ? '' : detail).slice(0, 300),
-      Date.now(),
-    );
-    q.trimAudit.run();
-  } catch (e) {
-    console.error('[audit]', e && e.message);
-  }
+  try { admins.record(admin, action, target, detail); }
+  catch (error) { console.error('[audit]', error.message); }
 }
 
 const MIME = {
@@ -478,7 +393,7 @@ const MIME = {
   '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
   '.txt': 'text/plain; charset=utf-8',
 };
-const DENY = [/^\/data\//i, /^\/materials\//i, /^\/(?:tests|scripts|node_modules|test-results|playwright-report)\//i, /^\/config\.json$/i, /^\/server\.js$/i, /^\/\./, /\.bak/i, /\.bak-\d/i];
+const DENY = [/^\/data\//i, /^\/materials\//i, /^\/(?:lib|tests|scripts|node_modules|test-results|playwright-report)\//i, /^\/config\.json$/i, /^\/(?:server|admin)\.js$/i, /^\/\./, /\.bak/i, /\.bak-\d/i];
 
 const LEGACY_STATIC_REDIRECTS = {
   '/Screenshot_2025-05-14-10-20-03-636_com.tencent.mm-edit.jpg': '/assets/media/Screenshot_2025-05-14-10-20-03-636_com.tencent.mm-edit.jpg',
@@ -527,6 +442,7 @@ function serveStatic(req, res, pathname) {
       'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream',
       'Content-Length': st.size,
       'Accept-Ranges': 'bytes',
+      ...(/\.(?:html|js|css)$/i.test(file) ? { 'Cache-Control': 'no-store' } : {}),
     };
     let start = 0;
     let end = st.size - 1;
@@ -563,6 +479,9 @@ function serveStatic(req, res, pathname) {
 
 // ---------------------------------------------------------------- API
 async function api(req, res, pathname) {
+  if (pathname === '/api/version' && req.method === 'GET') {
+    return send(res, 200, { ok: true, version: RELEASE.version, build: BUILD, features: RELEASE.features });
+  }
   const m = req.method;
   const h = clientHash(req);
 
@@ -605,7 +524,7 @@ async function api(req, res, pathname) {
     const text = clip(b.text, 400);
     if (!page || !eid) return send(res, 400, { ok: false, error: '缺少条目' });
     if (!text) return send(res, 400, { ok: false, error: '内容不能空' });
-    const moderated = CONFIG.commentsModerated;
+    const moderated = publicSettings().commentsModerated;
     const status = moderated ? 'pending' : 'published';
     const now = Date.now();
     const r = q.insertEComment.run(page, eid, name, text, status, now, h);
@@ -643,7 +562,7 @@ async function api(req, res, pathname) {
     if (!note) return send(res, 400, { ok: false, error: '内容不能空' });
     if (!CATEGORIES.includes(category)) return send(res, 400, { ok: false, error: '分类不合法' });
     const now = Date.now();
-    const moderated = CONFIG.peopleModerated;
+    const moderated = publicSettings().peopleModerated;
     const status = moderated ? 'pending' : 'published';
     const r = q.insert.run(name, category, note, status, now, h);
     if (moderated) {
@@ -675,7 +594,7 @@ async function api(req, res, pathname) {
       const name = clip(b.name, 20) || '匿名';
       const text = clip(b.text, 400);
       if (!text) return send(res, 400, { ok: false, error: '内容不能空' });
-      const moderated = CONFIG.commentsModerated;
+      const moderated = publicSettings().commentsModerated;
       const status = moderated ? 'pending' : 'published';
       const now = Date.now();
       const r = q.insertComment.run(pid, name, text, status, now, h);
@@ -696,7 +615,7 @@ async function api(req, res, pathname) {
     if (!row || row.status !== 'published') {
       return send(res, 404, { ok: false, error: '没有这条（可能已被删）' });
     }
-    if (CONFIG.peopleModerated) {
+    if (publicSettings().peopleModerated) {
       const dup = q.findRequest.get(id);
       if (dup) {
         return send(res, 202, {
@@ -727,7 +646,7 @@ async function api(req, res, pathname) {
     const name = clip(b.name, 20) || '匿名';
     const text = clip(b.text, 500);
     if (!text) return send(res, 400, { ok: false, error: '内容不能空' });
-    const moderated = CONFIG.messagesModerated;
+    const moderated = publicSettings().messagesModerated;
     const status = moderated ? 'pending' : 'published';
     const now = Date.now();
     const r = q.insertMsg.run(name, text, status, now, h);
@@ -748,16 +667,7 @@ async function api(req, res, pathname) {
     }
 
     if (pathname === '/api/admin/settings' && m === 'POST') {
-      const b = await readBody(req);
-      const changed = [];
-      for (const k of ['peopleModerated', 'messagesModerated', 'commentsModerated']) {
-        if (typeof b[k] === 'boolean' && b[k] !== CONFIG[k]) { CONFIG[k] = b[k]; changed.push(k); }
-      }
-      if (changed.length) {
-        saveConfig();
-        audit(admin, '保存审核开关', '', changed.join(', '));
-      }
-      return send(res, 200, { ok: true, settings: publicSettings(), changed });
+      return send(res, 200, admins.updateSettings(admin, await readBody(req)));
     }
 
     if (pathname === '/api/admin/all' && m === 'GET') {
@@ -1033,51 +943,22 @@ async function api(req, res, pathname) {
       return send(res, 200, { ok: true });
     }
 
-    // ---- 多管理员令牌
-    if (pathname === '/api/admin/tokens' && m === 'GET') {
-      return send(res, 200, {
-        ok: true,
-        me: admin.id,
-        tokens: CONFIG.adminTokens.map((a) => ({
-          id: a.id,
-          name: a.name,
-          hint: String(a.token).slice(0, 6) + '…' + String(a.token).slice(-4),
-          createdAt: a.createdAt || 0,
-          lastUsedAt: a.lastUsedAt || 0,
-          self: a.id === admin.id,
-        })),
-      });
-    }
-
+    // ---- 管理员：身份稳定，持久化与对应日志由同一个模块负责。
+    if (pathname === '/api/admin/tokens' && m === 'GET') return send(res, 200, admins.list(admin));
     if (pathname === '/api/admin/tokens' && m === 'POST') {
       const b = await readBody(req);
-      const name = clip(b.name, 20);
-      if (!name) return send(res, 400, { ok: false, error: '给这个人起个名字' });
-      if (CONFIG.adminTokens.some((a) => a.name === name)) {
-        return send(res, 409, { ok: false, error: '已经有同名管理员了' });
-      }
-      const id = 'a' + Date.now().toString(36);
-      const token = newToken();
-      CONFIG.adminTokens.push({ id, name, token, createdAt: Date.now(), lastUsedAt: 0 });
-      saveConfig();
-      audit(admin, '新增管理员', name);
-      return send(res, 200, { ok: true, id, name, token });
+      return send(res, 200, admins.create(admin, b.name));
     }
-
-    if (pathname === '/api/admin/tokens/revoke' && m === 'POST') {
+    if (m === 'POST' && ['/api/admin/tokens/revoke', '/api/admin/tokens/rename', '/api/admin/tokens/rotate', '/api/admin/tokens/status'].includes(pathname)) {
       const b = await readBody(req);
-      const id = clip(b.id, 40);
-      if (id === admin.id) return send(res, 400, { ok: false, error: '不能吊销自己正在用的这把' });
-      const idx = CONFIG.adminTokens.findIndex((a) => a.id === id);
-      if (idx < 0) return send(res, 404, { ok: false, error: '没有这个管理员' });
-      const gone = CONFIG.adminTokens.splice(idx, 1)[0];
-      saveConfig();
-      audit(admin, '吊销管理员', gone.name);
-      return send(res, 200, { ok: true });
+      if (typeof b.id !== 'string') return send(res, 400, { ok: false, error: '缺少管理员 ID' });
+      if (pathname.endsWith('/rename')) return send(res, 200, admins.rename(admin, b.id, b.name));
+      if (pathname.endsWith('/rotate')) return send(res, 200, admins.rotate(admin, b.id));
+      return send(res, 200, admins.setActive(admin, b.id, pathname.endsWith('/revoke') ? false : b.active));
     }
-
     if (pathname === '/api/admin/audit' && m === 'GET') {
-      return send(res, 200, { ok: true, items: q.listAudit.all() });
+      const params = new URL(req.url, 'http://x').searchParams;
+      return send(res, 200, admins.audit(admin, { adminId: params.get('adminId') || '', before: params.get('before'), limit: params.get('limit') }));
     }
 
     if (pathname === '/api/admin/snapshot' && m === 'POST') {
@@ -1098,7 +979,7 @@ const server = http.createServer((req, res) => {
   if (pathname.startsWith('/api/')) {
     api(req, res, pathname).catch((e) => {
       console.error('[api]', e && e.message);
-      if (!res.headersSent) send(res, 500, { ok: false, error: '服务器内部错误' });
+      if (!res.headersSent) send(res, e.status || 500, { ok: false, error: e.status ? e.message : '服务器内部错误' });
     });
     return;
   }
@@ -1117,14 +998,16 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, HOST, () => {
   const shown = HOST === '0.0.0.0' ? '127.0.0.1' : HOST;
   console.log('');
-  console.log('  My Confession 已启动（SQLite）');
+  console.log('  My Confession 已启动（SQLite） ' + RELEASE.version + ' / ' + BUILD);
   console.log('  站点   : http://' + shown + ':' + PORT + '/');
   console.log('  审核台 : http://' + shown + ':' + PORT + '/' + ADMIN_PAGE);
   console.log('  正文编辑: http://' + shown + ':' + PORT + '/' + EDITOR_PAGE);
-  console.log('  口令   : ' + CONFIG.adminToken);
-  console.log('  词条审核 : ' + (CONFIG.peopleModerated ? '开' : '关') +
-              '   留言审核 : ' + (CONFIG.messagesModerated ? '开' : '关') +
-              '   评论审核 : ' + (CONFIG.commentsModerated ? '开' : '关'));
+  if (admins.initialToken) console.log('  初始管理员令牌（仅首次显示）: ' + admins.initialToken);
+  else console.log('  管理员 : 使用已有令牌；管理员和审核设置保存在 data/app.db');
+  console.log('  找回令牌: node admin.js token（Docker: docker exec my-confession node admin.js token）');
+  console.log('  词条审核 : ' + (publicSettings().peopleModerated ? '开' : '关') +
+              '   留言审核 : ' + (publicSettings().messagesModerated ? '开' : '关') +
+              '   评论审核 : ' + (publicSettings().commentsModerated ? '开' : '关'));
   console.log('  数据库 : data/app.db');
   console.log('');
 });

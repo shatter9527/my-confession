@@ -1,6 +1,7 @@
 /**
  * 数据库备份 —— node backup.js
  * 用 SQLite 的 VACUUM INTO 生成一致性快照（WAL 模式下也安全）
+ * 含管理员、令牌、审核设置和日志（旧版未迁移数据库除外）。
  * 备份放在 data/backup/，默认保留最近 30 份
  */
 'use strict';

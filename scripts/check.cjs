@@ -38,7 +38,7 @@ for (const file of pages) {
         links++;
     }
 }
-for (const file of ['server.js', 'backup.js', ...fs.readdirSync(path.join(root, 'js')).map(name => 'js/' + name)]) {
+for (const file of ['server.js', 'admin.js', 'backup.js', ...fs.readdirSync(path.join(root, 'lib')).map(name => 'lib/' + name), ...fs.readdirSync(path.join(root, 'js')).map(name => 'js/' + name)]) {
     new vm.Script(fs.readFileSync(path.join(root, file), 'utf8'), { filename: file }); scripts++;
 }
 const context = { window: {} };

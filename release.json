@@ -1,0 +1,4 @@
+{
+  "version": "2026.10.18-admin4",
+  "features": ["sqlite-admins", "persistent-original-people", "versioned-assets"]
+}

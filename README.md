@@ -6,6 +6,8 @@
 
 这是一个静态 HTML/CSS/JavaScript 网站，附带一个零第三方依赖的 Node.js 服务。静态内容可直接打开 `index.html` 浏览；人物册、留言板、评论和在线正文编辑需要启动服务。
 
+当前发布版本：`2026.10.18-admin4`。更新后访问 `/api/version` 核对运行版本。
+
 ## 快速开始
 
 需要 Node.js 22.5 或更高版本。项目使用 Node 内置的 `node:sqlite`，无需运行 `npm install`。
@@ -40,17 +42,19 @@ docker compose up -d --build
 
 ## 维护文档
 
+- [管理员指南](docs/ADMINISTRATION.md)：后台入口、令牌查询、改名、停用和迁移
+- [当前版本更新说明](docs/releases/2026.10.18-admin4.md)：管理员重构、人物页修复与升级验证
 - [设计说明](docs/DESIGN.md)：页面组织、设计参考和交互约定
 - [第三方素材许可](docs/THIRD_PARTY_NOTICES.md)：Delineate 手绘花园的 MIT 署名
 - [开发指南](docs/DEVELOPMENT.md)：项目结构、内容修改、前后端职责和本地检查
 - [部署指南](docs/DEPLOYMENT.md)：本机、局域网、Docker/NAS、备份和公开访问
-- [服务器更新记录](docs/releases/UPDATE-20261018.md)：2026-10-18 的一次性上线步骤
+- [历史服务器更新记录](docs/releases/UPDATE-20261018.md)：早期版本流程，仅供留档
 - [旧部署文档入口](DEPLOY.md)：保留的兼容链接
 - 旧部署包说明：归档在 `docs/legacy/README-DEPLOY.txt`
 
 ## 数据与安全
 
-访客提交的人物册内容和留言存放在 `data/app.db`。首次启动时，服务会生成管理口令并写入 `config.json`；这两个路径已加入 `.gitignore`，不要提交或公开它们。部署到互联网前，请配置 HTTPS 和强管理口令。
+访客提交的人物册内容和留言存放在 `data/app.db`。管理员、令牌、审核开关和日志也保存在 `data/app.db`；首次安装生成初始令牌并仅在首次启动终端显示。旧 `config.json` 会自动导入一次且原文件保持不变。数据库、旧配置和备份均不应提交或公开。部署到互联网前，请配置 HTTPS 和强管理口令。
 
 项目没有构建步骤或第三方运行时依赖。`npm run check` 可直接检查页面与脚本；安装可选开发依赖后运行 `npm test` 进行浏览器回归。正文页面按栏目放在 `pages/`；共用代码在 `css/`、`js/`，图片和录音在 `assets/media/`。旧页面与素材 URL 会跳转到新位置。
 

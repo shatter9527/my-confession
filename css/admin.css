@@ -70,3 +70,8 @@ h2.sec { font: 600 28px/1.5 var(--display); padding-top: 15px; margin: 35px 0 18
     .editor-bar h1 { width: 100%; }
     .editor-bar button { padding: 8px 10px; }
 }
+
+.admin-head nav { flex-wrap: wrap; }
+.admin-wrap button:disabled, .editor-bar button:disabled { opacity: .45; cursor: not-allowed; }
+#administrators, #audit-log { scroll-margin-top: 20px; }
+#btn-audit-more { margin-top: 16px; }
