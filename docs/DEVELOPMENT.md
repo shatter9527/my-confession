@@ -70,6 +70,8 @@ config.json            管理口令等运行配置（自动生成，不提交）
 
 首页图片和录音位于 `assets/media/`。替换素材时沿用原文件名，或同步修改 `index.html` 的 `src`；旧根路径仍会跳转到新地址。
 
+人物册页面的 `#people-static` 保存内置原始词条，始终显示；`#people-list` 只展示 SQLite 中的在线新增人物。空库、其他分类有数据或接口失败都不能隐藏内置词条，原始词条不自动写入数据库。
+
 人物册、留言板和评论是动态功能：前端交互在 `js/people.js`，服务端校验、管理权限和数据持久化在 `server.js`。服务端使用 Node 内置 `node:http` 和 `node:sqlite`，数据库文件在 `data/app.db`。新增或调整数据字段时，同时检查 API 输入校验、`pages/admin.html` 展示以及现有数据库的兼容性。静态正文页可通过 `pages/admin-content.html` 在线编辑，服务端以页面文件名保存覆盖内容和历史版本。原始文本目录不由静态服务器公开。
 
 常用 API：

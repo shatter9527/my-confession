@@ -84,12 +84,27 @@ test('guestbook submits, persists, and reports moderated submissions', async ({ 
     await expect(page.locator('#msg-list')).not.toContainText('等审核的回忆');
 });
 
+test('original people entries remain visible with a fresh empty database', async ({ page, request }) => {
+    const response = await request.get('/api/people');
+    expect(response.ok()).toBeTruthy();
+    expect((await response.json()).items).toEqual([]);
+    for (const category of ['normal', 'god', 'full', 'half', 'xx']) {
+        await page.goto(`/pages/people/people-${category}.html`);
+        await page.waitForLoadState('networkidle');
+        const entries = page.locator('#people-static > p');
+        await expect(entries).toHaveCount(category === 'normal' ? 6 : 1);
+        for (const entry of await entries.all()) await expect(entry).toBeVisible();
+        await expect(page.locator('#people-list .people-empty')).toHaveCount(0);
+    }
+});
+
 test('people submissions and per-person comments keep their API behavior', async ({ page }) => {
     await page.goto('/pages/people/people-normal.html');
     await page.getByLabel('名字', { exact: true }).fill('一班同学');
     await page.getByLabel('关于这个人').fill('记得每个人的故事。');
     await page.locator('#people-form button[type=submit]').click();
     await expect(page.locator('.people-card')).toContainText('一班同学');
+    await expect(page.locator('#pn1')).toBeVisible();
     await page.locator('.people-card .cmt-toggle').click();
     await page.getByLabel('留言署名').fill('朋友');
     await page.getByLabel('留言内容').fill('好久不见');
@@ -97,6 +112,7 @@ test('people submissions and per-person comments keep their API behavior', async
     await expect(page.locator('.cmt-list')).toContainText('好久不见');
     await page.reload();
     await expect(page.locator('.people-card .cmt-toggle')).toContainText('留言 1');
+    await expect(page.locator('#pn1')).toBeVisible();
 });
 
 test('page overrides, entry edits/hiding/extras, and entry comments compose correctly', async ({ page, request, app }) => {

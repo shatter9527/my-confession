@@ -165,12 +165,14 @@
         var page = location.pathname.split('/').pop();
         var cat = CAT_OF_PAGE[page] || (list.dataset.category || '');
         var staticBox = document.getElementById('people-static');
+        var hasOriginalContent = !!(staticBox && staticBox.textContent.trim());
         var form = document.getElementById('people-form');
         var tip = document.getElementById('people-tip');
 
         function render(items) {
             list.textContent = '';
             if (!items.length) {
+                if (hasOriginalContent) { return; }
                 var empty = el('p', 'people-empty', '这一栏还没有条目 —— 用下面的表单添加第一个。');
                 list.appendChild(empty);
                 return;
@@ -204,10 +206,13 @@
 
         function load() {
             api('/api/people').then(function (r) {
-                var all = (r.body && r.body.items) || [];
+                if (r.status !== 200 || !r.body || !r.body.ok || !Array.isArray(r.body.items)) {
+                    throw new Error('人物册接口未返回有效列表');
+                }
+                var all = r.body.items;
                 var mine = all.filter(function (x) { return x.category === cat; });
                 render(mine);
-                if (staticBox) { staticBox.style.display = 'none'; }
+                // API 只包含在线新增人物；内置词条始终保留，不能被空库或其他分类覆盖。
             }).catch(function () {
                 // 拉不到就保留静态内容（离线/直接双击打开时）
             });

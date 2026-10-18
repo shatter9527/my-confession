@@ -71,6 +71,30 @@ docker compose logs -f my-confession
 
 迁移完成后，根目录的 `data/` 和 `config.json` 就不再被容器使用（容器只认卷），可以留着当备份，别急着删。
 
+## Docker 部署后人物词条不见了
+
+先区分两类内容：
+
+- **页面内置词条**（例如“正常人”中的陆长平）：随 HTML 一起发布，不依赖数据库。旧版前端会在 `/api/people` 成功返回后隐藏这些内容，导致新数据卷的空列表把原文遮住。更新包含该修复的代码、重建镜像，再强制刷新浏览器即可恢复显示。
+- **网页新增的人物、留言和评论**：存储在 SQLite。若从 Node 切换至 Docker、换了 Compose 项目目录/名称或删除过数据卷，容器可能正在使用另一份数据库。前端修复不会恢复这些内容，需要确认旧数据库或旧卷的位置后迁移。
+
+在 Compose 目录检查当前挂载和数据数量（不输出口令或正文）：
+
+```bash
+docker inspect my-confession --format '{{range .Mounts}}{{println .Type .Name .Source "->" .Destination}}{{end}}'
+docker compose exec my-confession node -e "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('/app/data/app.db',{readOnly:true});console.log(db.prepare('SELECT category,status,COUNT(*) AS count FROM people GROUP BY category,status').all());db.close()"
+docker volume ls
+```
+
+Compose 默认会给卷名加项目名前缀，因此换目录或 `-p` 参数可能创建新的空卷。确认旧卷仍在后再调整挂载；不要用 `docker compose down -v` 排查，它会删除数据卷。
+
+更新代码及镜像（保留当前卷）：
+
+```bash
+git pull --ff-only origin main
+docker compose up -d --build
+```
+
 ## 公开访问
 
 ### Cloudflare Tunnel（没有公网 IP 时最省事）
